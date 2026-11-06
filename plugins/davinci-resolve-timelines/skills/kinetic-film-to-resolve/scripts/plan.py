@@ -56,7 +56,12 @@ def _words(sc, film, notes):
         else:
             fn = 'slam'; kw.update(word=str(text), d=d); notes.append('unknown word style "%s" became a slam' % st)
         if o.get('charge') and i == 0 and st != 'punch3d': notes.append('charge-up lines only draw before a punch3d first shot')
-        for feat, label in (('scramble', 'glyph scramble'), ('glitch', 'RGB glitch'), ('rgb', 'RGB split'), ('flip', 'mid-shot colour flip'), ('note', 'typed note line'), ('code', 'code backdrop'), ('glyphs', 'glyph burst')):
+        if fn in ('cut', 'slam', 'split') and (s.get('rgb') or s.get('glitch')): kw['rgb'] = True
+        if (s.get('rgb') or s.get('glitch')) and fn not in ('cut', 'slam', 'split'): notes.append('"%s": RGB split not converted on a %s shot' % (_name(text), st))
+        if s.get('scramble') and fn in ('cut', 'slam', 'stack', 'split'): kw['scramble_in'] = True
+        if fn in ('slam', 'stack') and s.get('tumble') is False: kw['tumble_in'] = False
+        if s.get('scramble') and fn not in ('cut', 'slam', 'stack', 'split'): notes.append('"%s": glyph scramble not converted on a %s shot' % (_name(text), st))
+        for feat, label in (('flip', 'mid-shot colour flip'), ('note', 'typed note line'), ('code', 'code backdrop'), ('glyphs', 'glyph burst')):
             if s.get(feat): notes.append('"%s": %s not converted' % (_name(text), label))
         out.append(dict(name=_name(text), k0=a, k1=b, ground=s.get('ground', 'bg'), fn=fn, kw=kw))
     return out
@@ -107,11 +112,11 @@ def plan_film(film):
         elif b == 'Logo':
             new = [dict(name='Logo', k0=k0, k1=k1, ground=g, fn='logo', kw=dict(tagline=_tok(o.get('tagline'), film), small=_tok(o.get('small'), film), wordmark=o.get('wordmark') or film.get('title'), assets=film.get('logoAssets'), width=o.get('width', 840)))]
         elif b == 'Graph':
-            new = [dict(name='%s %s' % (o.get('number', ''), o.get('label', '')), k0=k0, k1=k1, ground=o.get('ground', 'paper'), fn='stack', kw=dict(kicker=_tok(o.get('label', ''), film), word=_tok(str(o.get('number', '')), film), second=1.0))]
-            notes.append('Graph "%s": the drawn curve and portal became a kicker and big number' % o.get('label', ''))
+            new = [dict(name='%s %s' % (o.get('number', ''), o.get('label', '')), k0=k0, k1=k1, ground=o.get('ground', 'paper'), fn='graph', kw=dict(number=_tok(str(o.get('number', '')), film), label=_tok(o.get('label', ''), film), sub=_tok(o.get('sub'), film)))]
+            notes.append('Graph "%s": the axes draw and the number counts, but the curve and portal are not drawn' % o.get('label', ''))
         elif b == 'Counters':
-            new = [dict(name='%s %s' % (l[0], l[1]), k0=a, k1=z, ground=g, fn='stack', kw=dict(kicker=_tok(l[1], film), word=_tok(l[0], film))) for a, z, l in _even(sc, o.get('counters', []))]
-            notes.append('Counters: slot reels and the source-code plane became a kicker and big number per counter')
+            new = [dict(name='%s %s' % (l[0], l[1]), k0=a, k1=z, ground=g, fn='stack', kw=dict(kicker=_tok(l[1], film), word=_tok(l[0], film), count=True)) for a, z, l in _even(sc, o.get('counters', []))]
+            notes.append('Counters: each number counts up under its label; the source-code plane is not drawn')
         elif b == 'Progress':
             ln = o.get('lines', ['', ''])
             new = [dict(name=_name(ln), k0=k0, k1=k1, ground=o.get('ground', 'paper'), fn='stack', kw=dict(kicker=_tok(ln[0], film), word=_tok(ln[1] if len(ln) > 1 else ln[0], film)))]
@@ -137,7 +142,6 @@ def plan_film(film):
         if shots and o.get('whipIn') is None and shots[-1]['kw'].get('whip_out') and b != 'Strike' and 'whip_in' not in new[0]['kw']:
             w = shots[-1]['kw']['whip_out']; new[0]['kw']['whip_in'] = (-w[0], -w[1])   # land from the side the last shot left to
         shots += new
-    if film.get('hud'): notes.append('HUD overlay not converted')
     if film.get('captions'): notes.append('Karaoke captions not converted: %d lines' % len(film['captions']))
     notes.append('Film grain and page-level bloom are not added')
     seen, unique = set(), []

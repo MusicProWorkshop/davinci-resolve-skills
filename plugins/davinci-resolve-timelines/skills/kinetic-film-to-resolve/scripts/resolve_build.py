@@ -1,6 +1,6 @@
 # resolve_build.py: the steps that touch Resolve. Load inside run_script_unsafe with:
 #   SKILL = r'<skill folder>'; exec(open(SKILL + r'\scripts\resolve_build.py', encoding='utf-8').read())
-import json, os, re, subprocess, time
+import json, math, os, re, subprocess, time
 for _f in ('fusion_lib.py', 'plan.py'):
     exec(open(os.path.join(SKILL, 'scripts', _f), encoding='utf-8').read())
 
@@ -43,17 +43,18 @@ def setup(resolve, project, film_dir, timeline_name, font, style, ui_font, ui_st
     fps = float(tl.GetSetting('timelineFrameRate'))
     cfg = dict(film_dir=film_dir, timeline=timeline_name, font=font, style=style, ui_font=ui_font, ui_style=ui_style, w=w, h=h, fps=fps, next=0)
     # the placeholder is the media under every comp: AddFusionComp needs a clip, and Fusion shots stay trimmable like any clip
-    carrier = os.path.join(_paths(film_dir), 'carrier_black.mov').replace('\\', '/')
-    secs = max(s['k1'] - s['k0'] for s in film['scenes']) * 60.0 / film['bpm'] + 2
+    # the HUD spans the whole film, so the placeholder must be at least that long; its length is in its name
+    secs = int(math.ceil(max(film['dur'], max(s['k1'] - s['k0'] for s in film['scenes']) * 60.0 / film['bpm']) + 2))
+    carrier = os.path.join(_paths(film_dir), 'carrier_black_%ds.mov' % secs).replace('\\', '/')
     if not os.path.exists(carrier):
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=black:s=%dx%d:r=%g:d=%.2f' % (w, h, fps, secs), '-c:v', 'libx264', '-preset', 'ultrafast', '-qp', '30', '-pix_fmt', 'yuv420p', carrier], check=True)
     root = pool.GetRootFolder()
     parent = next((f for f in root.GetSubFolderList() if f.GetName() == 'Kinetic Films'), None) or pool.AddSubFolder(root, 'Kinetic Films')
     folder = next((f for f in parent.GetSubFolderList() if f.GetName() == film['title']), None) or pool.AddSubFolder(parent, film['title'])
     pool.SetCurrentFolder(folder)
-    clips = [c for c in (folder.GetClipList() or []) if 'carrier' in c.GetName()]
+    clips = [c for c in (folder.GetClipList() or []) if c.GetName() == os.path.basename(carrier)]
     if not clips: clips = pool.ImportMedia([carrier])
-    cfg['bin'] = ['Kinetic Films', film['title']]
+    cfg['bin'] = ['Kinetic Films', film['title']]; cfg['carrier'] = os.path.basename(carrier)
     json.dump(cfg, open(os.path.join(_paths(film_dir), 'config.json'), 'w', encoding='utf-8'), indent=1)
     shots, notes = plan_film(film)
     json.dump(all_words(shots), open(os.path.join(_paths(film_dir), 'words.json'), 'w', encoding='utf-8'))
@@ -62,7 +63,7 @@ def setup(resolve, project, film_dir, timeline_name, font, style, ui_font, ui_st
 def _carrier(project, cfg):
     f = project.GetMediaPool().GetRootFolder()
     for n in cfg['bin']: f = next(x for x in f.GetSubFolderList() if x.GetName() == n)
-    return next(c for c in f.GetClipList() if 'carrier' in c.GetName())
+    return next(c for c in f.GetClipList() if c.GetName() == cfg.get('carrier', c.GetName()) and 'carrier' in c.GetName())
 
 def _res(v):
     """('beat', n[, x]) in a plan means n beats, as frames; kept symbolic so the plan stays independent of the tempo."""
@@ -118,6 +119,22 @@ def frame_grid(project, film_dir, seconds=None, per_sheet=12):
         r = tl.ExportThumbnails(chunk, {'outputType': 'file', 'filePath': path, 'maxDimension': 2400, 'quality': 85})
         (files if r.get('success') else failed).append(path if r.get('success') else '%s: %s' % (path, r.get('error')))
     return dict(files=files, failed=failed, shots=len(rows))
+
+def add_hud(project, film_dir):
+    """The film's HUD as one Fusion clip on track 2 over the whole film, fading out on hudOut. Does nothing for a film without one."""
+    cfg = _cfg(film_dir); film = _film(film_dir); _configure(cfg, film)
+    if not film.get('hud'): return dict(hud=False)
+    tl = _timeline(project, cfg['timeline']); project.SetCurrentTimeline(tl)
+    while tl.GetTrackCount('video') < 2: tl.AddTrack('video')
+    if tl.GetItemListInTrack('video', 2): return dict(hud='already on track 2')
+    dur = beat(film['beats'])
+    it = project.GetMediaPool().AppendToTimeline([{'mediaPoolItem': _carrier(project, cfg), 'startFrame': 0, 'endFrame': dur, 'mediaType': 1, 'trackIndex': 2, 'recordFrame': tl.GetStartFrame()}])[0]
+    it.SetName('HUD')
+    s = Shot(it.AddFusionComp(), dur, 'bg')
+    ho = film.get('hudOut')
+    shots, _ = plan_film(film)
+    hud(s, film['hud'], (beat(ho[0]), beat(ho[1])) if ho else None, [(beat(sh['k0']), pal(sh['ground'], 'bg')) for sh in shots])
+    return dict(hud=True, frames=dur)
 
 def add_markers(project, film_dir):
     """A marker on every scene, so an editor can see the film's structure on the ruler."""

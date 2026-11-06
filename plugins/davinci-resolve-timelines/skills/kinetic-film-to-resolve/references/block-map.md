@@ -6,11 +6,12 @@ Each shot becomes one clip, so a `Words` block with five shots gives five clips.
 
 | Block | In Fusion |
 | --- | --- |
-| `Words` `cut`, `slam`, `stack`, `split`, `pair`, `punch3d` | Text+ with keyframed moves and outline ghost rows. `punch3d` is a 2D scale from depth, not extruded |
-| `Strike` | NO + word over a native mock (`timeline`, `tiles`, `rack`), which dies on its beat |
+| `Words` `cut`, `slam`, `stack`, `split`, `pair`, `punch3d` | Text+ with keyframed moves and outline ghost rows. `slam` letters and `stack` kickers tumble in one by one (Text+ Follower). `punch3d` is a 2D scale from depth with an echo trail and an RGB split on the hit, not extruded. `rgb` and `glitch` shots get the RGB split, `scramble` shots resolve out of scrambled glyphs |
+| `Strike` | NO + word over a native mock (`timeline`, `tiles`, `rack`). A line draws the mock's frame, the word lands as an outline and fills when the mock dies |
 | `Hero` | Real Text3D title, flying from depth and turning, with a typed line |
 | `Fly` | Real Text3D words in depth, with a Camera3D flying through them |
-| `Logo` | PNG pieces from the film's SVG drop in and wipe on; or a wiped wordmark when there is no logo file |
+| `Logo` | PNG pieces from the film's SVG drop in and wipe on, over drifting particles; or a wiped wordmark when there is no logo file |
+| HUD | Brackets, REC, the label and a running timecode and frame counter on track 2, dark over light grounds, fading on `hudOut` (`add_hud`) |
 
 ## Changed but recognisable
 
@@ -28,8 +29,8 @@ These keep the words and the timing, and lose the signature move. Tell the user 
 
 | Block | Becomes |
 | --- | --- |
-| `Graph` | Label as a kicker over the big number. No drawn curve or portal |
-| `Counters` | One kicker and big number per counter. No slot reels or code plane |
+| `Graph` | The axes and ticks draw, then the number counts up under its label. No curve or portal |
+| `Counters` | One card per counter: the number counts up under its label. No slot reels or code plane |
 | `Progress` | Kicker and word. No conveyor or progress bar |
 | `Chain` | One card per node. No comet ride |
 | `Prompt` | Typed text on one card, ending in an accent flash. No keyword highlights or camera follow |
@@ -38,6 +39,6 @@ These keep the words and the timing, and lose the signature move. Tell the user 
 
 ## Not converted
 
-HUD, karaoke captions, film grain and page bloom, RGB split and glitch, glyph scramble, code backdrops, typed note lines, mid-shot colour flips, weather. Sound effects are not placed: `cues` are in `film.json` if an editor wants them, and the music is handled by the audio step.
+Karaoke captions, film grain, code backdrops, typed note lines, mid-shot colour flips, weather, and scramble or RGB split on `pair` shots. Grain works (Fusion's Film Grain), but it costs about 0.75 s a frame, five times the rest of a shot, so it is left out. Sound effects are not placed: `cues` are in `film.json` if an editor wants them, and the music is handled by the audio step.
 
 `setup` lists the ones that apply to the film as `notes`.

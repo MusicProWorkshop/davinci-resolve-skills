@@ -126,16 +126,45 @@ class Shot:
         return l
 
     # ---- type moves ----
-    def word(self, s, size, f0=0, y=.5, x=.5, col=None, s0=1.7, rot=0.0, settle=10, drift=.05, name=None):
-        """A word that slams in at frame f0, settles, then keeps growing slowly."""
-        t = self.text(s, size, col, name=name or 'Word')
+    def word(self, s, size, f0=0, y=.5, x=.5, col=None, s0=1.7, rot=0.0, settle=10, drift=.05, echo=False, outline=0, name=None):
+        """A word that slams in at frame f0, settles, then keeps growing slowly. echo adds a fading trail behind it."""
+        t = self.text(s, size, col, outline=outline, name=name or 'Word')
+        self.last_text = t
         m = self.xf(t, name='Move')
         m.SetInput('Angle', rot)
         pts = bake(f0, f0 + fr(settle), s0, 1.0) + [(self.dur, 1.0 + drift)]
         if f0 > 0: pts = [(f0 - 1, 0.001)] + pts
         key(m, 'Size', pts)
+        if echo: self.echo(m, (x, y))
         self.merge(m, center=(x, y), name='Place')
         return m
+
+    def echo(self, src, center=(.5, .5), lags=(2, 4, 6), alpha=(.45, .28, .15)):
+        """Copies of a moving layer a few frames behind it, fading out. Unlike the Trails tool, any frame renders on its own."""
+        for lag, a in zip(reversed(lags), reversed(alpha)):
+            d = self.c.AddTool('TimeSpeed', PLACE, PLACE)
+            d.ConnectInput('Input', src); d.SetInput('Delay', fr(lag)); d.SetInput('Speed', 1.0)
+            self.merge(d, center=center, blend=a, name='Echo')
+
+    def comet_rect(self, f0, f1, cx, cy, w, h, col=None, width=.004):
+        """A line that draws a rectangle's outline, the way the original's comet draws its boxes. Sizes in 1920x1080 pixels."""
+        b = self.solid(col or pal('accent'), name='CometColor')
+        m = self.c.AddTool('RectangleMask', PLACE, PLACE)
+        m.SetInput('Center', {1: cx, 2: cy, 3: 0}); m.SetInput('Width', w / 1920.0); m.SetInput('Height', h / 1080.0)
+        m.SetInput('Solid', 0); m.SetInput('BorderWidth', width)
+        key(m, 'WriteLength', [(f0, 0.0)] + bake(f0, f1, 0.0, 1.0, out_cubic, 2))
+        b.ConnectInput('EffectMask', m)
+        self.merge(b, name='Comet')
+
+    def dust(self, rate=.6, a=.6):
+        """Slow drifting specks across the frame, already in the air when the shot starts."""
+        e = self.c.AddTool('pEmitter', PLACE, PLACE)
+        e.SetInput('Number', rate); e.SetInput('Lifespan', 300); e.SetInput('Velocity', .002); e.SetInput('VelocityVariance', .002)
+        e.SetInput('AngleVariance', 360); e.SetInput('SphereRgn.Size', 4.0); e.SetInput('Style', 'ParticleStyleBlob')
+        e.SetInput('ParticleStyle.Size', .8); e.SetInput('ParticleStyle.SizeVariance', .8); e.SetInput('ParticleStyle.Blur', .5)
+        r = self.c.AddTool('pRender', PLACE, PLACE); r.ConnectInput('Input', e)
+        r.SetInput('UseFrameFormatSettings', 0); r.SetInput('Width', C['W']); r.SetInput('Height', C['H']); r.SetInput('PreGenerateFrames', 120)
+        self.merge(r, blend=a, name='Dust')
 
     def ghosts(self, s, size, col=None, rows=(.2, .8), alpha=.2, travel=.1):
         c = mix(self.ground, col or self.ink(), alpha)
@@ -199,7 +228,17 @@ class Shot:
                 for f0, _ in hits: on |= set(range(f0, min(f0 + fr(6), self.dur + 1)))
             key(c, 'MotionBlur', [(f, 1 if f in on else 0) for f in range(0, self.dur + 1) if f in on or f - 1 in on or f + 1 in on or f == 0])
         self.top = self.bg
+        self.vignette()
         self.merge(c, name='OverGround')
+
+    def vignette(self, a=None):
+        """Darkened corners on the ground. Light grounds take more, as the original's do."""
+        a = a if a is not None else (.32 if lum(self.ground) > .42 else .45)
+        v = self.solid((0, 0, 0), name='VignetteColor')
+        e = self.c.AddTool('EllipseMask', PLACE, PLACE)
+        e.SetInput('Invert', 1); e.SetInput('SoftEdge', .45); e.SetInput('Width', 1.15); e.SetInput('Height', 1.15)
+        v.ConnectInput('EffectMask', e)
+        self.merge(v, blend=a, name='Vignette')
 
     # ---- full-frame effects, added after camera() ----
     def flash(self, f0, col=(255, 255, 255), a=.85, n=7):
@@ -238,6 +277,14 @@ class Shot:
         m = self.merge(base, name='Rays')
         key(m, 'Blend', [(f0, a), (f0 + fr(n), 0.0)] if f0 == 0 else [(f0 - 1, 0.0), (f0, a), (f0 + fr(n), 0.0)])
 
+    def rgb_split(self, f0, amount=.012, n=8):
+        """Red and blue pulled apart on the hit, then snapping back."""
+        k = self.c.AddTool('KD_ChannelShifter', PLACE, PLACE)
+        k.ConnectInput('Image', self.top)
+        key_xy(k, 'Center1', ([(f0 - 1, (.5, .5))] if f0 else []) + [(f0, (.5 + amount, .5)), (f0 + fr(n), (.5, .5))])
+        key_xy(k, 'Center3', ([(f0 - 1, (.5, .5))] if f0 else []) + [(f0, (.5 - amount, .5)), (f0 + fr(n), (.5, .5))])
+        self.top = k
+
     def glow(self, amount=.9, size=18):
         g = self.c.AddTool('SoftGlow', PLACE, PLACE)
         g.ConnectInput('Input', self.top); g.SetInput('Threshold', .55); g.SetInput('Gain', amount); g.SetInput('XGlowSize', size)
@@ -252,6 +299,36 @@ class Shot:
     def finish(self):
         self.c.FindToolByID('MediaOut').ConnectInput('Input', self.top)
 
+def tumble(text_tool, f0, stagger=1.5, dur=15, rot=80.0, dy=-.15):
+    """Per-letter entrance with Text+'s Follower: each character drops and turns into place, one after another."""
+    s = text_tool.GetInput('StyledText')
+    text_tool.AddModifier('StyledText', 'StyledTextFollower')
+    fm = text_tool.StyledText.GetConnectedOutput().GetTool()
+    fm.SetInput('Text', s)          # the text moves onto the Follower; without this the word goes blank
+    fm.SetInput('Delay', fr(stagger))
+    key(fm, 'CharacterAngleZ', ([(f0 - 1, rot)] if f0 else []) + bake(f0, f0 + fr(dur), rot, 0.0))
+    key_xy(fm, 'CharacterOffset', ([(f0 - 1, (0, dy))] if f0 else []) + [(f, (0, v)) for f, v in bake(f0, f0 + fr(dur), dy, 0.0)])
+
+def scramble(text_tool, f0, f1):
+    """Glyphs scramble, then resolve into the word."""
+    s = text_tool.GetInput('StyledText')
+    text_tool.AddModifier('StyledText', 'TextScramble')
+    m = text_tool.StyledText.GetConnectedOutput().GetTool()
+    m.SetInput('InputText', s); m.SetInput('AnimateOnTime', 1); m.SetInput('DonTChangeSpaces', 1)
+    m.SetInput('SubstituteChars', 'ABCDEFGHJKMNPQRSTUVWXYZ0123456789#%&*/<>')
+    key(m, 'Randomness', ([(f0 - 1, 1.0)] if f0 else []) + [(f0, 1.0), (f1, 0.0)])
+
+def counter(text_tool, f0, f1, value):
+    """A number that counts up and lands on its value, eased like a slot reel. Returns False for anything but a whole number."""
+    digits = str(value).replace(',', '')
+    if not digits.isdigit(): return False
+    n, commas = int(digits), ',' in str(value)
+    v = 'math.floor(%d * (1 - (1 - math.min(1, math.max(0, (time - %d) / %d)))^3))' % (n, f0, max(1, f1 - f0))
+    fmt = 'string.format("%%d", %s)' % v
+    if commas: fmt = '((%s) >= 1000 and string.format("%%d,%%03d", math.floor((%s) / 1000), (%s) %% 1000) or string.format("%%d", %s))' % (v, v, v, v)
+    text_tool.StyledText.SetExpression('Text(%s)' % fmt)
+    return True
+
 def _fx(s, fx, f0, big=False):
     """The hit a shot lands on: punch = rays, ring, flash; hit = flash; beat or none add no layers."""
     if fx == 'punch':
@@ -260,40 +337,49 @@ def _fx(s, fx, f0, big=False):
         s.flash(f0, a=.45)
 
 # ---- the shot styles ----
-def cut(s, word, size=None, rot=0.0, col=None, y=.5, whip_in=None, whip_out=None, d=1, fx='beat', big=False, flash_at=None, exit=None):
+def cut(s, word, size=None, rot=0.0, col=None, y=.5, whip_in=None, whip_out=None, d=1, fx='beat', big=False, flash_at=None, exit=None, rgb=False, scramble_in=False):
     sz = fit(word, wanted(word, size))
     s.ghosts(word, sz, pal(col) if col else None, alpha=.18)
     s.word(word, sz, col=pal(col) if col else None, s0=1.12, rot=rot, y=y, settle=7)
+    if scramble_in: scramble(s.last_text, 0, fr(14))
     s.camera(zoom=.92, push=.1, d=d, hits=[(0, 12)], whip_in=whip_in, whip_out=whip_out, exit=exit)
     _fx(s, fx, 0, big)
+    if rgb: s.rgb_split(0)
     if flash_at is not None: s.flash_out(flash_at)
 
-def slam(s, word, size=None, col=None, whip_in=None, whip_out=None, d=1, fx='hit', big=False, flash_at=None, exit=None):
+def slam(s, word, size=None, col=None, whip_in=None, whip_out=None, d=1, fx='hit', big=False, flash_at=None, exit=None, tumble_in=True, rgb=False, scramble_in=False):
+    """A huge word over scrolling ghost rows; its letters tumble in one by one, as in the original."""
     sz = fit(word, wanted(word, size))
     s.ghosts(word, sz, pal(col) if col else None, alpha=.2)
-    s.word(word, sz, col=pal(col) if col else None, s0=1.9, settle=9)
+    s.word(word, sz, col=pal(col) if col else None, s0=1.15 if tumble_in else 1.9, settle=9)
+    if tumble_in: tumble(s.last_text, 0)
+    if scramble_in: scramble(s.last_text, 0, fr(14))
     s.camera(zoom=.92, push=.1, d=d, hits=[(0, 18)], whip_in=whip_in, whip_out=whip_out, exit=exit)
     _fx(s, fx, 0, big)
+    if rgb or big: s.rgb_split(0, .008, 6)
     if flash_at is not None: s.flash_out(flash_at)
 
 def punch(s, word, f0=0, col=None, whip_in=None, whip_out=None, charge=False, flash_at=None, exit=None):
     sz = fit(word, wanted(word))
-    s.word(word, sz, f0=f0, s0=.15, settle=11, col=pal(col) if col else None)
+    s.word(word, sz, f0=f0, s0=.15, settle=11, col=pal(col) if col else None, echo=True)
     s.camera(zoom=.92, push=.08, hits=[(f0, 24)], whip_in=whip_in, whip_out=whip_out, exit=exit)
     if charge: s.rays(0, a=.5, n=f0 / C['FPS'] * 60 + 30)
     else: s.rays(f0)
-    s.flash(f0, a=.6); s.ring(f0)
+    s.flash(f0, a=.6); s.ring(f0); s.rgb_split(f0)
     if flash_at is not None: s.flash_out(flash_at)
 
-def stack(s, kicker, word, px=1620, y=.47, whip_in=None, whip_out=None, d=1, col=None, fx='none', second=.5, flash_at=None, exit=None):
+def stack(s, kicker, word, px=1620, y=.47, whip_in=None, whip_out=None, d=1, col=None, fx='none', second=.5, flash_at=None, exit=None, tumble_in=True, count=False, scramble_in=False):
     sz = fit(word, px); ks = min(fit(kicker, px * .62), sz * .46)
     half = beat(second)
     e, ke = sz * C['PX'], ks * C['PX']
     ky = y + (e * .53 + ke * .47) / 1080
     actual = em(word) * e
     c = pal(col) if col else None
-    s.word(kicker, ks, y=ky, s0=1.25, settle=8, drift=.02, col=c, name='Kicker')
+    s.word(kicker, ks, y=ky, s0=1.0 if tumble_in else 1.25, settle=8, drift=.02, col=c, name='Kicker')
+    if tumble_in: tumble(s.last_text, 0, stagger=1.6, dur=14)
     s.word(word, sz, f0=half, y=y, s0=1.7, settle=9, drift=.04, col=c)
+    if count: counter(s.last_text, half, half + beat(1.6), word)
+    elif scramble_in: scramble(s.last_text, half, half + fr(14))
     s.bar(actual, y - e * .54 / 1080, half + beat(.3), pal('accent') if lum(s.ground) < .42 or s.ground[0] > 240 and s.ground[2] > 200 else pal('ink'))
     s.camera(zoom=.92, push=.08, d=d, whip_in=whip_in, whip_out=whip_out, hits=[(half, 12)], exit=exit)
     _fx(s, fx, half)
@@ -314,7 +400,7 @@ def pair(s, a, b, whip_in=None, whip_out=None, d=1, fx='beat', second=.5, flash_
     _fx(s, fx, half)
     if flash_at is not None: s.flash_out(flash_at)
 
-def split(s, small, big, px=1560, col='accent', whip_in=None, whip_out=None, d=1, fx='punch', second=.5, heavy=False, flash_at=None, exit=None):
+def split(s, small, big, px=1560, col='accent', whip_in=None, whip_out=None, d=1, fx='punch', second=.5, heavy=False, flash_at=None, exit=None, rgb=False, scramble_in=False):
     sz = min(fit(big, px), 420.0 / C['PX']); ss = sz * .42
     half = beat(second)
     e = sz * C['PX']; w = em(big) * e
@@ -322,12 +408,14 @@ def split(s, small, big, px=1560, col='accent', whip_in=None, whip_out=None, d=1
     c = pal(col)
     if abs(lum(c) - lum(s.ground)) < .2: c = s.ink()      # the accent word has to stand out on this ground
     t = s.text(big, sz, c, name='Big')
+    if scramble_in: scramble(t, half, half + fr(14))
     m = s.xf(t, name='BigSlide')
     key_xy(m, 'Center', [(half - 1, (1.6, .5))] + [(f, (x, .5)) for f, x in bake(half, half + fr(10), 1.25, .5)] + [(s.dur, (.485, .5))])
     s.merge(m, center=(.5, .47), name='Place')
     s.camera(zoom=.92, push=.09, d=d, whip_in=whip_in, whip_out=whip_out, hits=[(half, 24)], exit=exit)
     if lum(s.ground) < .42: s.glow(.5)
     _fx(s, fx, half, heavy)
+    if rgb: s.rgb_split(half)
     if flash_at is not None: s.flash_out(flash_at)
 
 def typed(s, text, label=None, size=.075, whip_in=None, whip_out=None, start=.1, end=.85, flash_at=None, ui=True):
@@ -392,6 +480,7 @@ def strike(s, word, ui=None, no='NO', whip_in=None, whip_out=None, tv_off=False)
     mock = MOCKS.get((ui or {}).get('type'))
     if mock:
         keep = s.top; s.top = s.solid((0, 0, 0), a=0.0, name='UI')
+        s.comet_rect(0, b1, .5, .5, 1330, 450, width=.003)
         mock(s, b2, ui)
         panel = s.xf(s.top, name='MockMove')
         panel.SetInput('Angle', -2.0)
@@ -406,7 +495,10 @@ def strike(s, word, ui=None, no='NO', whip_in=None, whip_out=None, tv_off=False)
     total = nw + gap + w
     y = .76 if mock else .5
     s.word(no, sz, f0=b1, x=.5 - (total - nw) / 2 / 1920, y=y, col=pal('accent'), s0=1.8, settle=8, drift=.03, name='No')
-    s.word(word, sz, f0=b15, x=.5 + (total - w) / 2 / 1920, y=y, s0=1.5, settle=8, drift=.03)
+    wx = .5 + (total - w) / 2 / 1920
+    s.word(word, sz, f0=b15, x=wx, y=y, s0=1.5, settle=8, drift=.03, outline=1, name='WordOutline')
+    s.word(word, sz, f0=b15, x=wx, y=y, s0=1.5, settle=8, drift=.03)
+    key(s.top, 'Blend', [(b2 - 1, 0.0), (b2, 1.0)])
     s.camera(zoom=.95, push=.06, pan=26, whip_in=whip_in, whip_out=whip_out, hits=[(b1, 10), (b2, 14)], blur='whips', exit=(s.dur - fr(10), .02) if tv_off else None)
     if (ui or {}).get('type') == 'timeline': s.slash(b2)
 
@@ -556,6 +648,7 @@ def picture(s, src, words=(), cutIns=(), tint=.25, focus=(.5, .5), x=None, y=Non
 # ---- Logo ----
 def logo(s, tagline=None, small=None, wordmark=None, assets=None, width=840, y=.54, **_):
     """The end card: a line and a hit, the mark pieces drop in, the name wipes on, the lines follow, then a slow push."""
+    s.dust()
     line = s.solid(pal('hot'), w=1240, h=5, name='HitLine')
     lm = s.xf(line, name='HitGrow')
     lm.SetInput('UseSizeAndAspect', 0)
@@ -597,3 +690,59 @@ def logo(s, tagline=None, small=None, wordmark=None, assets=None, width=840, y=.
     s.camera(zoom=1.0, push=.018, pan=0, hits=[(fr(12), 12)])
     s.flash(0, col=pal('hot'), a=.7)
     if lum(s.ground) < .42: s.glow(.25, 22)
+
+# ---- Graph ----
+def graph(s, number, label, sub=None, whip_in=None, whip_out=None):
+    """Axes draw themselves, then the number counts up with its label; the original's curve and portal are not drawn."""
+    ink = s.ink(); ox, oy, w, h = .14, .2, 1500, 640
+    xr, _ = s.rect(ink, ox, oy, 0, 4, name='AxisX')
+    pts = bake(0, beat(1), 0.0, 1.0)
+    key(xr, 'Width', [(f, u * w / 1920.0) for f, u in pts]); key_xy(xr, 'Center', [(f, (ox + u * w / 1920.0 / 2, oy)) for f, u in pts])
+    yr, _ = s.rect(ink, ox, oy, 4, 0, name='AxisY')
+    key(yr, 'Height', [(f, u * h / 1080.0) for f, u in pts]); key_xy(yr, 'Center', [(f, (ox, oy + u * h / 1080.0 / 2)) for f, u in pts])
+    for i in range(1, 9):
+        tk, m = s.rect(mix(s.ground, ink, .5), ox + i * w / 1920.0 / 8, oy - .012, 3, 18, name='Tick')
+        key(m, 'Blend', [(beat(.3) + i * fr(2) - 1, 0.0), (beat(.3) + i * fr(2), 1.0)])
+    stack(s, label, str(number), px=900, y=.56, whip_in=whip_in, whip_out=whip_out, second=1.0, count=True)   # high enough to leave room for the sub line under the bar
+    if sub:
+        t = s.text(sub, .028, mix(s.ground, ink, .7), ui=True, tracking=1.2, name='Sub')
+        m = s.merge(t, center=(.5, .225), name='SubPlace'); key(m, 'Blend', [(beat(1.6), 0.0), (beat(2.2), 1.0)])
+
+# ---- HUD ----
+def hud(s, label, fade=None, grounds=()):
+    """Corner brackets, REC, the film's label and a running timecode and frame counter, on a transparent layer for track 2.
+    fade = (first frame, last frame) of the fade out. grounds = [(first frame, ground colour), ...]: the HUD turns dark
+    over light grounds, as the original's does."""
+    s.bg = s.solid((0, 0, 0), a=0.0, name='Clear'); s.top = s.solid((0, 0, 0), a=0.0, name='Stage')
+    ink = pal('paper')
+    before = {t.GetAttrs()['TOOLS_Name'] for t in s.c.GetToolList().values()}   # tools are unhashable, names aren't
+    for x, y, sx, sy in ((.035, .94, 1, -1), (.965, .94, -1, -1), (.035, .06, 1, 1), (.965, .06, -1, 1)):
+        s.rect(ink, x + sx * 34 / 1920.0, y, 70, 3, name='Bracket'); s.rect(ink, x, y + sy * 34 / 1080.0, 3, 70, name='Bracket')
+    s.merge(s.text(label, .013, ink, ui=True, tracking=1.3, name='HudLabel'), center=(.84, .925))
+    s.merge(s.text('REC', .013, ink, ui=True, name='Rec'), center=(.088, .07))
+    s.rect(pal('accent'), .068, .07, 14, 14, radius=.5, name='RecDot')
+    tc = s.text('00:00:00:00', .013, ink, ui=True, tracking=1.2, name='Timecode')
+    f = int(round(C['FPS']))
+    tc.StyledText.SetExpression('Text(string.format("00:00:%%02d:%%02d   F %%04d", math.floor(time / %d), math.floor(time %% %d), time))' % (f, f))
+    s.merge(tc, center=(.86, .07))
+    if grounds:
+        inks = [(f, readable(g)) for f, g in grounds]
+        for t in s.c.GetToolList().values():
+            rid, nm = t.GetAttrs()['TOOLS_RegID'], t.GetAttrs()['TOOLS_Name']
+            if nm == 'RecDot' or nm in before: continue
+            ins = ('TopLeftRed', 'TopLeftGreen', 'TopLeftBlue') if rid == 'Background' and t.GetInput('TopLeftAlpha') > 0 else ('Red1', 'Green1', 'Blue1') if rid == 'TextPlus' else None
+            if not ins: continue
+            for n, inp in enumerate(ins):
+                pts, last = [], None
+                for f, c in inks:
+                    v = c[n] / 255.0
+                    if last is not None and v != last: pts += [(max(0, f - 1), last)]
+                    if v != last: pts.append((f, v))
+                    last = v
+                if len(pts) > 1: key(t, inp, pts)
+                else: t.SetInput(inp, pts[0][1])
+    out = s.xf(s.top, name='HudFade')
+    if fade: key(out, 'Blend', [(fade[0], 1.0), (fade[1], 0.0)])
+    s.top = s.bg
+    s.merge(out, name='HudOver')
+    s.finish()

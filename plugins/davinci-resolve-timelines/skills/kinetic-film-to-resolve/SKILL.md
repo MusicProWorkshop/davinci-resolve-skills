@@ -63,11 +63,13 @@ Without it, words use estimated widths and may not fill the frame well. If it re
 result = build_batch(project, F, 40)
 ```
 
-Then add the audio and scene markers:
+Then add the HUD (only if the film has one), the audio and scene markers:
 
 ```python
-result = dict(audio=audio_from_timeline(project, F, 'Music Edit'), markers=add_markers(project, F))
+result = dict(hud=add_hud(project, F), audio=audio_from_timeline(project, F, 'Music Edit'), markers=add_markers(project, F))
 ```
+
+The HUD is one Fusion clip on track 2 over the whole film. An editor can disable that clip to drop it.
 
 **5. Look at frames.** On Resolve 21.2 or later, this exports labelled sheets of the middle of every shot straight from the timeline in a few seconds, with no render and no change to render settings. They go to `<F>/resolve/review/`. Check that nothing is black, words stay in frame, kickers clear their words, and images cover the frame. Fix what's wrong before rendering. `frame_grid(project, F, seconds=[4.2, 9.35])` gives chosen moments at full size, such as the end of a whip.
 

@@ -36,7 +36,7 @@ const data = await pg.evaluate(async () => {
   const plain = o => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'function' ? undefined : v)));
   return {
     title: spec.title || 'Film', bpm: spec.bpm, beats: spec.beats, fps: spec.fps || 60, palette: spec.palette, logo: spec.logo || null,
-    hud: spec.hud || null, music: spec.music || null, captions: plain(spec.captions || []), cues: plain(f.cues || []), lines: f.lines || 0, dur: f.dur || spec.beats * 60 / spec.bpm,
+    hud: spec.hud || null, hudOut: spec.hudOut || null, music: spec.music || null, captions: plain(spec.captions || []), cues: plain(f.cues || []), lines: f.lines || 0, dur: f.dur || spec.beats * 60 / spec.bpm,
     scenes: spec.scenes.map(([cls, k0, k1, o]) => ({ block: blockName(cls), k0, k1, o: plain(o || {}) })),
   };
 });
