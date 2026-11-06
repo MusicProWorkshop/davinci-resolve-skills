@@ -1,0 +1,14 @@
+{
+  "name": "davinci-resolve-timelines",
+  "displayName": "DaVinci Resolve Timelines",
+  "version": "1.0.0",
+  "description": "Screen tutorials, Remotion videos and kinetic films as DaVinci Resolve timelines, with keyframes and Fusion titles you can keep editing",
+  "author": {
+    "name": "MusicProWorkshop",
+    "url": "https://github.com/MusicProWorkshop"
+  },
+  "homepage": "https://github.com/MusicProWorkshop/davinci-resolve-skills",
+  "repository": "https://github.com/MusicProWorkshop/davinci-resolve-skills",
+  "license": "MIT",
+  "keywords": ["davinci-resolve", "fusion", "video", "tutorial", "remotion", "motion-graphics"]
+}

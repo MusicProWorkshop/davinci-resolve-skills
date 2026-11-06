@@ -1,0 +1,15 @@
+{
+  "name": "musicproworkshop-resolve",
+  "description": "Skills that build editable DaVinci Resolve timelines from screenshots, Remotion videos and kinetic typography films",
+  "owner": {
+    "name": "MusicProWorkshop",
+    "url": "https://github.com/MusicProWorkshop"
+  },
+  "plugins": [
+    {
+      "name": "davinci-resolve-timelines",
+      "source": "./plugins/davinci-resolve-timelines",
+      "description": "Screen tutorials, Remotion videos and kinetic films as DaVinci Resolve timelines, with keyframes and Fusion titles you can keep editing"
+    }
+  ]
+}
