@@ -136,16 +136,25 @@ def make_blueprint(project, work):
     if old:
         _delete_timeline(project, old)
     t.SetName(name)
-    made, missing = [], []
-    for k, kind in enumerate(['Caption', 'Card', 'Highlight', 'Click']):
-        title = '%s %s' % (plan['brand_prefix'], kind)
-        t.SetCurrentTimecode('01:%02d:00:00' % k)
-        item = t.InsertFusionTitleIntoTimeline(title)
-        if not item:
-            missing.append(title)
-            continue
-        # A title's comp only exports with its data once it has been opened.
-        made.append((title, len(item.GetFusionCompByIndex(1).GetToolList(False))))
+    made, missing, done = [], [], set()
+    for attempt in range(5):
+        missing = []
+        for k, kind in enumerate(['Caption', 'Card', 'Highlight', 'Click']):
+            title = '%s %s' % (plan['brand_prefix'], kind)
+            if title in done:
+                continue
+            t.SetCurrentTimecode('01:%02d:00:00' % k)
+            item = t.InsertFusionTitleIntoTimeline(title)
+            if not item:
+                missing.append(title)
+                continue
+            done.add(title)
+            # A title's comp only exports with its data once it has been opened.
+            made.append((title, len(item.GetFusionCompByIndex(1).GetToolList(False))))
+        if not missing:
+            break
+        # Resolve 21.2 can take a few seconds to list templates installed while it runs.
+        time.sleep(3)
     if missing:
         raise RuntimeError('Resolve could not insert %s. Run templates.py with --install. If it has run, Resolve may need a restart to see new templates: ask the user.' % missing)
     ok = t.Export(os.path.join(_build(work), 'blueprint.drt'), resolve.EXPORT_DRT, resolve.EXPORT_NONE)
@@ -348,6 +357,47 @@ def build_film(project, work):
     if finished['done']:
         out.update(verify=verify(project, work), cleanup=cleanup(project, work))
     return out
+
+
+def _moments(plan):
+    fps = plan['fps']
+    rows = [(m['frame'] + int(fps * 0.75), '%s %.2fs' % (m['name'], m['frame'] / fps + 0.75)) for m in plan['markers']]
+    for title in plan['titles']:
+        kind = title['template'].rsplit(' ', 1)[-1]
+        if kind == 'Highlight':
+            f = (title['start'] + title['end']) // 2
+            rows.append((f, 'highlight %.2fs' % (f / fps)))
+        elif kind == 'Click':
+            f = title['start'] + int(fps * 0.1)
+            rows.append((f, 'click %.2fs' % (f / fps)))
+    return sorted(set(rows))
+
+
+def review_frames(project, work, seconds=None, per_sheet=12):
+    """Frames straight from the timeline, with no render: labelled sheets of each scene, highlight and click, or the given times at full size."""
+    plan = _plan(work)
+    t = timeline_named(project, plan['name'])
+    if not hasattr(t, 'ExportThumbnails'):
+        raise RuntimeError('This Resolve has no Timeline.ExportThumbnails, which arrived by 21.2. Review from a render instead.')
+    # A timeline that hasn't been opened exports black frames while still reporting success.
+    project.SetCurrentTimeline(t)
+    out = os.path.join(_build(work), 'review')
+    os.makedirs(out, exist_ok=True)
+    last = plan['total'] - 1
+    files, failed = [], []
+    if seconds:
+        for s in seconds:
+            path = os.path.join(out, 'at-%.2f.png' % s)
+            r = t.ExportFrame(min(last, max(0, int(round(s * plan['fps'])))), {'outputType': 'file', 'filePath': path})
+            (files if r.get('success') else failed).append(path if r.get('success') else '%s: %s' % (s, r.get('error')))
+        return dict(files=files, failed=failed)
+    rows = _moments(plan)
+    for n, i in enumerate(range(0, len(rows), per_sheet)):
+        chunk = [{'frameOffset': min(last, f), 'label': label} for f, label in rows[i:i + per_sheet]]
+        path = os.path.join(out, 'frames-%02d.jpg' % n)
+        r = t.ExportThumbnails(chunk, {'outputType': 'file', 'filePath': path, 'maxDimension': 2400, 'quality': 85})
+        (files if r.get('success') else failed).append(path if r.get('success') else '%s: %s' % (path, r.get('error')))
+    return dict(files=files, failed=failed, frames=len(rows))
 
 
 def start_render(project, work, label='review'):

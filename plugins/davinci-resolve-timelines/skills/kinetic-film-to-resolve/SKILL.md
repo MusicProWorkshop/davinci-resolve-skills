@@ -69,18 +69,26 @@ Then add the audio and scene markers:
 result = dict(audio=audio_from_timeline(project, F, 'Music Edit'), markers=add_markers(project, F))
 ```
 
-**5. Render:**
+**5. Look at frames.** On Resolve 21.2 or later, this exports labelled sheets of the middle of every shot straight from the timeline in a few seconds, with no render and no change to render settings. They go to `<F>/resolve/review/`. Check that nothing is black, words stay in frame, kickers clear their words, and images cover the frame. Fix what's wrong before rendering. `frame_grid(project, F, seconds=[4.2, 9.35])` gives chosen moments at full size, such as the end of a whip.
+
+```python
+result = frame_grid(project, F)
+```
+
+The frames match a render of the same frame, checked on 21.2. On an older Resolve without `ExportThumbnails`, it raises an error, so judge from the render instead.
+
+**6. Render, and measure motion.**
 
 ```python
 result = start_render(project, F, 'my_film')    # picks a GPU H.264 encoder when there is one
 # in later calls: result = wait_render(project, result_job_id, 50)
 ```
 
-Expect about 2 to 4 minutes for 30 s at 1080p60 on a strong GPU. Build-time issues show up here first, so render before judging. Afterwards remove only your own job with `remove_job`. The queue may hold the user's jobs. `start_render` changes the project's render settings, so say so.
+Expect about 2 to 4 minutes for 30 s at 1080p60 on a strong GPU. Afterwards remove only your own job with `remove_job`. The queue may hold the user's jobs. `start_render` changes the project's render settings, so say so.
 
-**6. Review real frames.** Sample the rendered file with ffmpeg, about one frame per block plus the end of each whip, into a contact sheet (`montage.py` in scenario-kinetic-film's scripts, if installed). Check that nothing is black, words stay in frame, kickers clear their words, and images cover the frame. Run `holds.py` and `dyn.py` from that skill too if available: targets are 40 % still frames or less, no hold over 0.6 s before the end card, and median motion of 2.5 or more. Report the numbers, including misses.
+Motion can only be measured from the video. Run `holds.py` and `dyn.py` from scenario-kinetic-film's scripts on the render, if they're installed. The targets are 40 % still frames or less, no hold over 0.6 s before the end card, and median motion of 2.5 or more. Report the numbers, including misses.
 
-To change something, fix it and rebuild with `setup(..., replace=True)`, only on a timeline this skill built, then repeat steps 4 and 5. If the film's words changed, rerun step 3.
+To change something, fix it and rebuild with `setup(..., replace=True)`, only on a timeline this skill built, then repeat steps 4 to 6. If the film's words changed, rerun step 3.
 
 **7. Finish.** Leave saving to the user unless they ask: saving also commits any other unsaved edits they have open. Report the timeline name, the notes, the render time and the review numbers. Mention the placeholder clip must stay in its bin, or the shots may show as offline.
 
@@ -89,7 +97,7 @@ To change something, fix it and rebuild with `setup(..., replace=True)`, only on
 These each cost real time to find. The detail is in [references/fusion-traps.md](references/fusion-traps.md); read it before changing `fusion_lib.py` or if something goes wrong.
 
 - **Do not lock a comp while building it.** The clip then renders black. Lock only around Loader creation, as `Shot.loader` does; otherwise setting the Loader's clip opens a modal file picker on the user's screen that stops all scripting.
-- **Do not trust `ExportCurrentFrameAsStill` to review.** It outruns Fusion and returns black or stale frames. Review from a render.
+- **Do not use `ExportCurrentFrameAsStill` to review.** It outruns Fusion and returns black or stale frames. `frame_grid`, which uses `Timeline.ExportFrame` and `ExportThumbnails`, is reliable, but only on the current timeline: a timeline that hasn't been opened exports black frames while still reporting success.
 - **Do not stack motion blur.** Blur on a word's own move and on the camera multiplies the work. Only the camera blurs, and only during fast moves.
 - **Do not assume a faster encoder fixes a slow render.** Fusion frame generation is usually the limit. Measure before changing settings.
 

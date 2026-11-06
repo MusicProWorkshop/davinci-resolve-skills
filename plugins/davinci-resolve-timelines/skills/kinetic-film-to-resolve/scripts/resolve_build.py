@@ -1,6 +1,6 @@
 # resolve_build.py: the steps that touch Resolve. Load inside run_script_unsafe with:
 #   SKILL = r'<skill folder>'; exec(open(SKILL + r'\scripts\resolve_build.py', encoding='utf-8').read())
-import json, os, subprocess, time
+import json, os, re, subprocess, time
 for _f in ('fusion_lib.py', 'plan.py'):
     exec(open(os.path.join(SKILL, 'scripts', _f), encoding='utf-8').read())
 
@@ -83,7 +83,8 @@ def build_batch(project, film_dir, seconds=40):
         if f1 <= f0:
             i += 1; continue
         it = pool.AppendToTimeline([{'mediaPoolItem': carrier, 'startFrame': 0, 'endFrame': f1 - f0, 'mediaType': 1, 'trackIndex': 1, 'recordFrame': t0 + f0}])[0]
-        it.SetName(sh['name'])
+        # Resolve 21.2 refuses a clip name with any of \ / : * ? " < > |, so those are dropped when the full name is refused.
+        it.SetName(sh['name']) or it.SetName(re.sub(r'[\\/:*?"<>|]', '', sh['name']).strip())
         comp = it.AddFusionComp()
         s = Shot(comp, f1 - f0, sh['ground'])
         kw = {k: _res(v) for k, v in sh['kw'].items() if v is not None}
@@ -93,6 +94,30 @@ def build_batch(project, film_dir, seconds=40):
     cfg['next'] = i
     json.dump(cfg, open(os.path.join(_paths(film_dir), 'config.json'), 'w', encoding='utf-8'), indent=1)
     return dict(built=i, total=len(shots), done=i >= len(shots), seconds=round(time.time() - start, 1))
+
+def frame_grid(project, film_dir, seconds=None, per_sheet=12):
+    """Frames straight from the timeline, with no render: labelled sheets of the middle of every shot, or the given times at full size."""
+    cfg = _cfg(film_dir); tl = _timeline(project, cfg['timeline'])
+    if not hasattr(tl, 'ExportThumbnails'):
+        raise RuntimeError('This Resolve has no Timeline.ExportThumbnails, which arrived by 21.2. Review from a render instead.')
+    # A timeline that hasn't been opened exports black frames while still reporting success.
+    project.SetCurrentTimeline(tl)
+    out = os.path.join(_paths(film_dir), 'review'); os.makedirs(out, exist_ok=True)
+    t0, last = tl.GetStartFrame(), tl.GetEndFrame() - tl.GetStartFrame() - 1
+    files, failed = [], []
+    if seconds:
+        for s in seconds:
+            path = os.path.join(out, 'at-%.2f.png' % s)
+            r = tl.ExportFrame(min(last, max(0, int(round(s * cfg['fps'])))), {'outputType': 'file', 'filePath': path})
+            (files if r.get('success') else failed).append(path if r.get('success') else '%s: %s' % (s, r.get('error')))
+        return dict(files=files, failed=failed)
+    rows = [(it.GetStart() - t0 + it.GetDuration() // 2, it.GetName()) for it in tl.GetItemListInTrack('video', 1) or []]
+    for n, i in enumerate(range(0, len(rows), per_sheet)):
+        chunk = [{'frameOffset': min(last, f), 'label': '%s %.2fs' % (name, f / cfg['fps'])} for f, name in rows[i:i + per_sheet]]
+        path = os.path.join(out, 'frames-%02d.jpg' % n)
+        r = tl.ExportThumbnails(chunk, {'outputType': 'file', 'filePath': path, 'maxDimension': 2400, 'quality': 85})
+        (files if r.get('success') else failed).append(path if r.get('success') else '%s: %s' % (path, r.get('error')))
+    return dict(files=files, failed=failed, shots=len(rows))
 
 def add_markers(project, film_dir):
     """A marker on every scene, so an editor can see the film's structure on the ruler."""

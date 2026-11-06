@@ -38,7 +38,7 @@ The adapter should import the video's real data, so that when the copy or timing
 
 Set the brand from the code's colors, fonts and logo. List every font the video loads and check each with `fonts_available`. If one isn't installed, ask whether to install it or use a similar installed one. An installed font with the same name can still be a different cut from the web font, with slightly different widths.
 
-**5. Build.** Follow the Build section of `resolve-screen-tutorial`'s `SKILL.md` from step 1 up to the render in step 4, with `WORK` set to the film's folder. Skip its `review.py` call, because step 6 here does that with the reference, and remove your render job once you're done comparing. Its decisions apply here too: tell the user which project this lands in, and never replace a timeline you didn't build. Set `fps` to the project's frame rate. Times in `film.json` are in seconds, so the timing still holds when it differs from the composition's.
+**5. Build.** Follow the Build section of `resolve-screen-tutorial`'s `SKILL.md` from step 1 to step 4, with `WORK` set to the film's folder. Step 4's `review_frames` is a quick check before you render. Then render, as in its step 5, because the comparison needs the whole video. Skip its `review.py` call, because step 6 here does that with the reference, and remove your render job once you're done comparing. Its decisions apply here too: tell the user which project this lands in, and never replace a timeline you didn't build. Set `fps` to the project's frame rate. Times in `film.json` are in seconds, so the timing still holds when it differs from the composition's.
 
 **6. Compare with the Remotion render.** Pass the reference to `review.py`:
 

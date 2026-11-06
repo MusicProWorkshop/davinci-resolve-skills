@@ -7,7 +7,7 @@ description: Build a software tutorial, product walkthrough or screen demo as an
 
 Turns a description of a tutorial (`film.json`) and its screenshots into a timeline an editor can keep working on. Clips have ordinary Inspector keyframes, titles are Fusion titles with controls in the Inspector, and scenes are marked. It adds no audio, so narration and music go on afterwards.
 
-The Resolve API can't set keyframes or a title's length, so the build writes them into a timeline file and imports it. `references/how-it-works.md` explains this and lists known problems. Read it if a step fails or Resolve isn't version 21.1.1.
+The Resolve API can't set keyframes or a title's length, so the build writes them into a timeline file and imports it. `references/how-it-works.md` explains this and lists known problems. Read it if a step fails or Resolve is newer than 21.2.
 
 ## Before you start
 
@@ -90,11 +90,21 @@ python "<SKILL>/scripts/templates.py" "<WORK>" --install
 result = build_film(project, WORK)
 ```
 
-`verify.problems` should be empty. If `done` is false, repeat `result = finish_batch(project, WORK)` until it's true, then run `result = dict(verify=verify(project, WORK), cleanup=cleanup(project, WORK))`. If `build_film` can't insert the titles, ask the user to restart Resolve after saving their work. New templates showed up without a restart in testing.
+`verify.problems` should be empty. If `done` is false, repeat `result = finish_batch(project, WORK)` until it's true, then run `result = dict(verify=verify(project, WORK), cleanup=cleanup(project, WORK))`. Resolve can take a few seconds to see newly installed titles, so `build_film` waits for them. If it still can't insert them, ask the user to restart Resolve after saving their work.
 
 Don't delete bins, here or when tidying up: clips can be linked from one bin to timelines elsewhere (see `references/how-it-works.md`).
 
-**4. Render and look at it.** Judge the film from a render, since the viewer and stills can mislead. `start_render` changes the project's render settings, so say so.
+**4. Look at it.** This exports labelled sheets of frames straight from the timeline: each scene, the middle of each highlight, and just after each click. It takes a few seconds and needs no render, so render settings don't change. Open the sheets in `build/review/`.
+
+```python
+result = review_frames(project, WORK)
+```
+
+Check that highlights sit on their elements, the cursor lands where it should, ripples are visible, captions fit, and nothing is black. For a closer look, `review_frames(project, WORK, seconds=[10.5, 20.2])` gives those moments at full size, in timeline seconds. `plan.py` prints when each scene starts, to convert from scene times.
+
+The frames match a render of the same frame, as tested on Resolve 21.2. `review_frames` needs the frame export API that 21.2 has. On an older Resolve it raises an error, and the render below does the job: run `review.py` on it without a reference to get the same sheets.
+
+**5. Render, when you need a file.** Render to give the user a video, or for `remotion-to-resolve`'s comparison. `start_render` changes the project's render settings, so say so.
 
 ```python
 result = start_render(project, WORK, 'review')
@@ -108,15 +118,13 @@ result = wait_render(project, '<job id>', 50)   # repeat until the status is Com
 python "<SKILL>/scripts/review.py" "<WORK>" "<WORK>/build/render/review.mp4"
 ```
 
-Open the sheets in `build/review/`, which show each scene, each highlight and each click. Check that highlights sit on their elements, the cursor lands where it should, ripples are visible, captions fit, and nothing is black. For a closer look, `review.py` takes `--at 10.5,20.2` for moments at full size, in timeline seconds. `plan.py` prints when each scene starts, to convert from scene times.
-
 Remove your job, and only yours, since the queue may hold the user's:
 
 ```python
 result = remove_job(project, '<job id>')
 ```
 
-To change something, remove the job, edit `film.json`, run `plan.py`, and call `build_film` again. Run `templates.py` again too if the brand or `fps` changed. If the user has edited the timeline by hand, ask before rebuilding, or make the change by hand on the timeline.
+To change something, edit `film.json`, run `plan.py`, and call `build_film` again, then look again. If you rendered, remove the job first. Run `templates.py` again too if the brand or `fps` changed. If the user has edited the timeline by hand, ask before rebuilding, or make the change by hand on the timeline.
 
 ## Finish
 
@@ -124,9 +132,9 @@ Leave saving to the user unless they ask, because saving also commits any other 
 
 - the timeline and bin, and the tracks
 - where the titles were installed
-- that the render settings changed, and that the new timeline is now the current one, naming the one `preflight` found open
+- that the new timeline is now the current one, naming the one `preflight` found open, and, if you rendered, that the render settings changed
 - any caption wording you inferred, and anything in the screenshots that conflicts with the brief
-- what you checked, and what you didn't. A render shows the picture, but not how the Inspector or timeline look in Resolve.
+- what you checked, and what you didn't. Frames show the picture, but not motion or how the Inspector and timeline look in Resolve.
 - anything approximated, and these limits: no audio, stills only, and highlights that stay on the frame during camera moves
 
 Clips come from their files on disk, so moving the film's folder or the screenshots takes the clips offline. Keep `build/assets/` too, since the cursor and backdrops live there.

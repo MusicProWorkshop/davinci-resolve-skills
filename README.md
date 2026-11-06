@@ -37,7 +37,7 @@ To use a skill without the plugin system, copy its folder from `plugins/davinci-
 
 ## What was tested
 
-Everything was built and checked on Windows with DaVinci Resolve Studio 21.1.1, at 1920x1080.
+Everything was built and checked on Windows with DaVinci Resolve Studio 21.1.1 and 21.2, at 1920x1080. On 21.2 the skills review frames straight from the timeline, without rendering.
 
 - **`resolve-screen-tutorial`:** tested at 60 fps, and at 30 fps inside a 60 fps project. Other sizes and macOS haven't been tested.
 - **`remotion-to-resolve`:** rebuilt two Remotion tutorials with a similarity score (SSIM, where 1 is identical) of 0.96 to 0.97 against the Remotion renders.

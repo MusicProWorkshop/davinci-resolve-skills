@@ -28,7 +28,10 @@ Found on Resolve Studio 21.1.1 on Windows. Recheck them if a later version behav
 
 ## Reviewing
 
-- **`ExportCurrentFrameAsStill` races Fusion.** It returned black frames, and identical frames for different times. Review from a real render. A render with `MarkIn`/`MarkOut` is a cheap way to check one section.
+- **`ExportCurrentFrameAsStill` races Fusion.** It returned black frames, and identical frames for different times.
+- **`Timeline.ExportFrame` and `ExportThumbnails` (Resolve 21.2) don't race Fusion.** Twelve frames of this skill's comps and 24 frames of Fusion titles and keyframed clips each matched the render of the same frame, at an SSIM of 0.99 or more. `frame_grid` uses them.
+- **They need the current timeline.** On a timeline that hasn't been opened, they return a black frame and still report success. Call `project.SetCurrentTimeline` first, as `frame_grid` does.
+- **Clip names (Resolve 21.2).** `TimelineItem.SetName` returns False for a name with any of `\ / : * ? " < > |`, and the clip keeps its media's name. `build_batch` drops those characters when that happens.
 - **A render that takes 17 s for a whole film is a sign of black frames**, not success. Sample frames before quoting a time.
 
 ## Render queue

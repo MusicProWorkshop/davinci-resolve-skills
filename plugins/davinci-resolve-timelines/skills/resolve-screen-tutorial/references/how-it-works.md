@@ -1,12 +1,12 @@
 # How the build works, and what goes wrong
 
-Read this if a step fails, if you change the scripts, or if Resolve is not version 21.1.1. Everything here was found on Resolve Studio 21.1.1 on Windows.
+Read this if a step fails, if you change the scripts, or if Resolve is newer than 21.2. Everything here was found on Resolve Studio 21.1.1 on Windows, and the build was checked again on 21.2: the `.drt` layout is unchanged, and the render matched 21.1.1's exactly.
 
 ## Why a patched .drt
 
 | Way in | Result |
 | --- | --- |
-| Scripting API | No Inspector keyframes, and no way to set a title's length or track |
+| Scripting API | No Inspector keyframes, still true in 21.2. In 21.1.1 there was also no way to set a title's length or track. 21.2's `SetPosition`, `MoveItems` and `SetRightOffset` may cover that, but titles still go in the `.drt` because clips have to anyway |
 | FCPXML import | Drops keyframes |
 | FCP7 XML import | Keeps keyframes, but only some of the easing handles |
 | Patched `.drt` | Keyframes with handles, and titles at exact frames and lengths |
@@ -37,6 +37,9 @@ If `patch_drt.py` fails on a later Resolve, export a clip with a known keyframe 
 - **Dissolves are items.** `GetItemListInTrack` lists each transition as an item. They need even lengths and sit centered on the cut, so a shot's first frames play under the dissolve. That's why camera keys run from frame 0 of the scene.
 - **Render settings.** A render changes the project's output folder and file name, and jobs the user queues later inherit them.
 - **Fusion text.** `Text.Output.DataWindow[3] - [1]` measures text, but a Text+ can't read that in its own Center, because it's a cycle and the render fails. A Transform after it does the placing. A mask's output is named `Mask`, not `Output`, and wiring `Output` floods the frame with colour. `RectangleMask` Height is a fraction of frame height, and `EllipseMask` Height is a fraction of frame width.
-- **`ExportCurrentFrameAsStill` races Fusion** and returns black or stale frames. Review from a render.
+- **`ExportCurrentFrameAsStill` races Fusion** and returns black or stale frames. Don't use it.
+- **`Timeline.ExportFrame` and `ExportThumbnails` (21.2) are reliable.** 24 frames of titles, clicks and camera moves each matched the render of the same frame, at an SSIM of 0.991 or more. `review_frames` uses them.
+- **They need the current timeline.** On a timeline that hasn't been opened, they return a black frame and still report success. `review_frames` makes the film's timeline current first.
+- **New titles take a moment (21.2).** Titles installed while Resolve is running were not insertable for a few seconds. `make_blueprint` retries for about 12 s.
 - **After `StopRendering`,** `AddRenderJob` returns `None` for 20 to 40 s. Wait, then call it again.
 - **If calls start returning `None`** with no render running, a dialog is probably open in Resolve. Ask the user to look.
