@@ -90,7 +90,7 @@ Expect about 2 to 4 minutes for 30 s at 1080p60 on a strong GPU. Afterwards remo
 
 Motion can only be measured from the video. Run `holds.py` and `dyn.py` from scenario-kinetic-film's scripts on the render, if they're installed. The targets are 40 % still frames or less, no hold over 0.6 s before the end card, and median motion of 2.5 or more. Report the numbers, including misses.
 
-To change something, fix it and rebuild with `setup(..., replace=True)`, only on a timeline this skill built, then repeat steps 4 to 6. If the film's words changed, rerun step 3.
+To change something, fix it and rebuild with `setup(..., replace=True)`, only on a timeline this skill built, then repeat steps 4 to 6. For a fix to a few shots, `rebuild_shots(project, F, [8.2, 13])` replaces just the comps of the shots at those times (in seconds), or by shot index, and keeps everything else. If the film's words changed, rerun step 3.
 
 **7. Finish.** Leave saving to the user unless they ask: saving also commits any other unsaved edits they have open. Report the timeline name, the notes, the render time and the review numbers. Mention the placeholder clip must stay in its bin, or the shots may show as offline.
 

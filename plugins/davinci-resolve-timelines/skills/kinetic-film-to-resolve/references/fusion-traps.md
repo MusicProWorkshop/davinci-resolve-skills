@@ -19,6 +19,11 @@ Found on Resolve Studio 21.1.1 on Windows. Recheck them if a later version behav
 - **Outlines.** `Alpha2` did not fade them as expected. Ghost rows mix the ground and ink colours instead.
 - **Text3D.** Shallow extrusion (`ExtrusionDepth` about .07) stays crisp. At .3 the sides blur the letter shapes, even with lights.
 - **Typing** is the Text+ `End` input, keyed from 0 to 1.
+- **Ellipse masks size both axes by the frame width.** Width and Height of 2r/1920 give a circle; 2r/1080 for the height gives a tall oval.
+- **Sample a path along itself, not per frame.** An eased comet crosses the fast end of its path in two or three frames, so a stroke through per-frame positions shows straight segments there. `export_film.mjs` also samples each comet path at 240 even steps of its own parameter (`path`) and the eased parameter per frame (`us`); the stroke uses the first, the timing the second.
+- **Paths:** a `PolylineMask`'s `Polyline` input takes `{'Closed': False, 'Points': {1: {'X', 'Y', ...}}}` centred on 0; key `WritePosition` (centre) and `WriteLength` to run a stroke along it, as the comet tail does.
+- **Particles in random access:** `pRender` re-simulates from frame 0 for each exported frame, and particle motion blur made frames pass the 10 s export limit. Streak-style particles always draw horizontally. Sparks are drawn as a fixed pattern of streaks that scales outward instead.
+- **Fly camera:** with `AovType` 1 and `AoV` 82.2, Text3D at `Size` 1 is .667 units per em at 1.1 units from the eye.
 - **Per-letter animation** is the `StyledTextFollower` modifier on `StyledText`. The text moves onto the Follower's own `Text` input, which must be set or the word goes blank. `Delay` is frames between letters; keyframe the Follower's `CharacterAngleZ` and `CharacterOffset`, and each letter plays them in turn.
 - **Scramble** is the `TextScramble` modifier on `StyledText`: set `InputText`, `AnimateOnTime` = 1, and key `Randomness` from 1 to 0. `SubstituteChars` picks the glyphs.
 - **Counting numbers** are a Text+ expression: `tool.StyledText.SetExpression('Text(string.format("%d", ...time...))')`. Lua's `string.format` and `math` work there.

@@ -41,6 +41,33 @@ const data = await pg.evaluate(async () => {
   };
 });
 
+// the engine's effects layer: every comet, spark burst, slash, ray, ring, drifting light, starburst, dot flash, flash and
+// invert the film draws, with its timing, position and colour. Comet paths are functions, so they are sampled per frame.
+data.fx = await pg.evaluate(async () => {
+  const { Film } = await import('/compositor.js');
+  const core = await import('/core.js');
+  const spec = (await import('/spec.js')).default, fps = spec.fps || 60;
+  const box = document.createElement('div'); box.style.cssText = 'position:absolute;left:-99999px;width:1920px;height:1080px'; document.body.appendChild(box);
+  const f = new Film(box, { src: { code: '', lines: 0 }, logo: '', spec, dsf: 1 });
+  const plain = o => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'function' ? undefined : v)));
+  const r1 = v => Math.round(v * 10) / 10;
+  const comets = f.comets.map(c => {
+    const e = c.ease || core.E.inOutCubic, P = s => c.path(e(Math.min(1, Math.max(0, (s - c.t0) / Math.max(1e-6, c.t1 - c.t0)))), s);
+    const pts = [], us = [];
+    for (let s = c.t0; s <= c.t1 + 1e-9; s += 1 / fps) { pts.push(P(s).map(r1)); us.push(Math.round(e(Math.min(1, (s - c.t0) / Math.max(1e-6, c.t1 - c.t0))) * 1e5) / 1e5); }
+    pts.push(P(c.t1).map(r1)); us.push(1);
+    // the path itself, sampled evenly in its own parameter: an eased comet crosses its fast end in a few frames,
+    // so per-frame samples alone would draw that end as straight segments
+    const path = [];
+    for (let i = 0; i <= 240; i++) path.push(c.path(i / 240, c.t0 + (c.t1 - c.t0) * i / 240).map(r1));
+    return { ...plain(c), pts, us, path };
+  });
+  const out = { comets, tint: core.C.tint, tint2: core.C.tint2, grid: f.scenes.map(s => ({ t0: s.t0, t1: s.t1, noGrid: !!s.noGrid })) };
+  for (const k of ['bursts', 'slashes', 'rays', 'rings', 'bokehs', 'stars', 'dots', 'flashes', 'inverts', 'shakes', 'bumps', 'whips', 'lights']) out[k] = plain(f[k]);
+  box.remove();
+  return out;
+});
+
 // the logo, as transparent PNGs that share one canvas, so the pieces line up when the comp stacks them
 data.logoAssets = null;
 const logoScene = data.scenes.find(s => s.block === 'Logo');
@@ -71,6 +98,34 @@ if (data.logo && logoScene && fs.existsSync(path.join(film, data.logo))) {
   data.logoAssets = a;
   await lp.close();
 }
+// images the Resolve build places in 3D: the Fly block's chamfered portal frame, and a sheet of dust for the tunnel
+// (both drawn as the engine draws them, in the film's colours), and the engine's glyph set for glyph bursts
+const ap = await b.newPage({ viewport: { width: 400, height: 300 } });
+const imgs = await ap.evaluate(([acc, paper]) => {
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const rgba = (h, a) => `rgba(${hex(h).join(',')},${a})`;
+  const cham = (x, y, w, h, c) => [[x + c, y], [x + w - c, y], [x + w, y + c], [x + w, y + h - c], [x + w - c, y + h], [x + c, y + h], [x, y + h - c], [x, y + c], [x + c, y]];
+  const poly = (g, pts, col, lw) => { g.strokeStyle = col; g.lineWidth = lw; g.lineJoin = 'round'; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); };
+  const portal = document.createElement('canvas'); portal.width = 1560; portal.height = 760;
+  const p = portal.getContext('2d');
+  poly(p, cham(6, 6, 1548, 748, 40), rgba(acc, .25), 12); poly(p, cham(6, 6, 1548, 748, 40), acc, 3.5); poly(p, cham(330, 220, 900, 320, 24), rgba(paper, .18), 2);
+  const dust = document.createElement('canvas'); dust.width = 3000; dust.height = 2000;
+  const d = dust.getContext('2d');
+  let s = 77; const r = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  for (let i = 0; i < 260; i++) {
+    const a = r() * Math.PI * 2, rad = 380 + r() * 1300, sz = .6 + r(), x = 1500 + Math.cos(a) * rad * .9, y = 1000 + Math.sin(a) * rad * .63;
+    d.fillStyle = rgba(sz > 1.3 ? acc : paper, .75); d.beginPath(); d.arc(x, y, 1.6 * sz, 0, 7); d.fill();
+  }
+  return { portal: portal.toDataURL('image/png'), dust: dust.toDataURL('image/png') };
+}, [(data.palette || {}).accent || '#FF5B2E', (data.palette || {}).paper || '#F4F1EA']);
+data.flyAssets = {};
+for (const [k, v] of Object.entries(imgs)) {
+  const file = path.join(assets, 'fly_' + k + '.png');
+  fs.writeFileSync(file, Buffer.from(v.split(',')[1], 'base64'));
+  data.flyAssets[k] = file.replace(/\\/g, '/');
+}
+await ap.close();
+
 data.film = film.replace(/\\/g, '/');
 fs.writeFileSync(path.join(out, 'film.json'), JSON.stringify(data, null, 1));
 const count = {}; data.scenes.forEach(s => { count[s.block] = (count[s.block] || 0) + 1; });

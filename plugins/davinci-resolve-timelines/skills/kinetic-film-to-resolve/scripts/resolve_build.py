@@ -1,7 +1,7 @@
 # resolve_build.py: the steps that touch Resolve. Load inside run_script_unsafe with:
 #   SKILL = r'<skill folder>'; exec(open(SKILL + r'\scripts\resolve_build.py', encoding='utf-8').read())
 import json, math, os, re, subprocess, time
-for _f in ('fusion_lib.py', 'plan.py'):
+for _f in ('fusion_lib.py', 'fx_layer.py', 'plan.py'):
     exec(open(os.path.join(SKILL, 'scripts', _f), encoding='utf-8').read())
 
 def _timeline(project, name):
@@ -19,6 +19,7 @@ def _configure(cfg, film):
     C['ASSETS'] = os.path.join(_paths(cfg['film_dir']), 'assets')
     p = os.path.join(_paths(cfg['film_dir']), 'em.json')
     C['EM'] = json.load(open(p, encoding='utf-8')) if os.path.exists(p) else {}
+    C['ENGINE_FX'] = bool(film.get('fx'))   # the engine's own effects list is drawn, so styles leave out their stand-ins
 
 def fonts_available(resolve, *names):
     """Text+ only sees installed fonts: {name: its styles, or None if missing}."""
@@ -78,6 +79,8 @@ def build_batch(project, film_dir, seconds=40):
     tl = _timeline(project, cfg['timeline']); project.SetCurrentTimeline(tl)
     pool = project.GetMediaPool(); carrier = _carrier(project, cfg); t0 = tl.GetStartFrame()
     start = time.time(); i = cfg['next']; errors = []
+    fx = film.get('fx'); grid = grid_png(C['ASSETS']) if fx else None
+    if fx: C['DOTS'] = dots_png(C['ASSETS'])
     while i < len(shots) and time.time() - start < seconds:
         sh = shots[i]
         f0, f1 = beat(sh['k0']), beat(sh['k1'])
@@ -87,14 +90,37 @@ def build_batch(project, film_dir, seconds=40):
         # Resolve 21.2 refuses a clip name with any of \ / : * ? " < > |, so those are dropped when the full name is refused.
         it.SetName(sh['name']) or it.SetName(re.sub(r'[\\/:*?"<>|]', '', sh['name']).strip())
         comp = it.AddFusionComp()
-        s = Shot(comp, f1 - f0, sh['ground'])
-        kw = {k: _res(v) for k, v in sh['kw'].items() if v is not None}
-        globals()[sh['fn']](s, **kw)
-        s.finish()
+        _build_shot(Shot(comp, f1 - f0, sh['ground']), sh, f0, f1, fx, grid)
         i += 1
     cfg['next'] = i
     json.dump(cfg, open(os.path.join(_paths(film_dir), 'config.json'), 'w', encoding='utf-8'), indent=1)
     return dict(built=i, total=len(shots), done=i >= len(shots), seconds=round(time.time() - start, 1))
+
+def _build_shot(s, sh, f0, f1, fx, grid):
+    if grid and grid_on(fx, f0 / C['FPS'], f1 / C['FPS']): dot_grid(s, grid)
+    globals()[sh['fn']](s, **{k: _res(v) for k, v in sh['kw'].items() if v is not None})
+    apply_fx(s, fx, f0)
+    s.finish()
+
+def rebuild_shots(project, film_dir, which):
+    """Replace the comps of some shots in place, by shot index or by a time in seconds they cover, keeping their clips.
+    For a fix to one effect or one shot without rebuilding the timeline. Run export_film.mjs first if the spec changed."""
+    cfg = _cfg(film_dir); film = _film(film_dir); _configure(cfg, film)
+    shots, _ = plan_film(film); fx = film.get('fx'); grid = grid_png(C['ASSETS']) if fx else None
+    if fx: C['DOTS'] = dots_png(C['ASSETS'])
+    tl = _timeline(project, cfg['timeline']); project.SetCurrentTimeline(tl); t0 = tl.GetStartFrame()
+    items = {it.GetStart() - t0: it for it in tl.GetItemListInTrack('video', 1) or []}
+    done = []
+    for w in which:
+        i = w if isinstance(w, int) else next(n for n, sh in enumerate(shots) if beat(sh['k0']) <= w * C['FPS'] < beat(sh['k1']))
+        sh = shots[i]; f0, f1 = beat(sh['k0']), beat(sh['k1'])
+        it = items[f0]
+        old = it.GetFusionCompNameList()
+        comp = it.AddFusionComp()
+        for n in old: it.DeleteFusionCompByName(n)   # the new comp is added first, so the clip is never left without one
+        _build_shot(Shot(comp, f1 - f0, sh['ground']), sh, f0, f1, fx, grid)
+        done.append((i, sh['name']))
+    return done
 
 def frame_grid(project, film_dir, seconds=None, per_sheet=12):
     """Frames straight from the timeline, with no render: labelled sheets of the middle of every shot, or the given times at full size."""

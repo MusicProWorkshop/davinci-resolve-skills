@@ -99,7 +99,7 @@ def plan_film(film):
         elif b == 'Hero':
             new = [dict(name=_name(o.get('title', 'Hero')), k0=k0, k1=k1, ground=g, fn='hero', kw=dict(kicker=_tok(o.get('kicker'), film), title=_tok(o.get('title', ''), film), sub=_tok(o.get('sub'), film)))]
         elif b == 'Fly':
-            new = [dict(name='Fly through', k0=k0, k1=k1, ground=g, fn='fly', kw=dict(words=[[_tok(w[0], film), w[1] if len(w) > 1 else 'paper'] for w in o.get('words', [])]))]
+            new = [dict(name='Fly through', k0=k0, k1=k1, ground=g, fn='fly', kw=dict(words=[[_tok(w[0], film), w[1] if len(w) > 1 else 'paper'] for w in o.get('words', [])], assets=film.get('flyAssets')))]
         elif b == 'Stretch':
             new = [dict(name=_name(o.get('word', 'ELASTIC.')), k0=k0, k1=k1, ground=g, fn='stretch', kw=dict(word=_tok(o.get('word', 'ELASTIC.'), film), grounds=o.get('grounds')))]
             notes.append('%s: the stretch is a horizontal scale, not the variable width axis' % o.get('word', 'Stretch'))

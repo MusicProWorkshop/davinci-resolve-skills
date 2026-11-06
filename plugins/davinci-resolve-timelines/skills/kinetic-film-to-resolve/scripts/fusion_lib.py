@@ -242,14 +242,17 @@ class Shot:
 
     # ---- full-frame effects, added after camera() ----
     def flash(self, f0, col=(255, 255, 255), a=.85, n=7):
+        if C.get('ENGINE_FX'): return   # the engine's own flashes are drawn by fx_layer
         m = self.merge(self.solid(col, name='FlashColor'), name='Flash')
         key(m, 'Blend', ([(f0 - 1, 0.0)] if f0 else []) + bake(f0, f0 + fr(n), a, 0.0, lambda u: u))
 
     def flash_out(self, f0, col=(255, 255, 255)):
+        if C.get('ENGINE_FX'): return
         m = self.merge(self.solid(col, name='FlashColor'), name='FlashOut')
         key(m, 'Blend', [(f0, 0.0), (self.dur, 1.0)])
 
     def ring(self, f0, col=None, n=20, end=1.0, width=.006):
+        if C.get('ENGINE_FX'): return
         s = self.solid(col or pal('accent'), name='RingColor')
         e = self.c.AddTool('EllipseMask', PLACE, PLACE)
         e.SetInput('Solid', 0); e.SetInput('BorderWidth', width)
@@ -261,6 +264,7 @@ class Shot:
 
     def rays(self, f0, col=None, n=26, a=.55):
         """Radial speed lines: thin lines rotated around the centre, with a hole that opens outward."""
+        if C.get('ENGINE_FX'): return
         col = col or self.ink()
         base = self.solid((0, 0, 0), a=0.0, name='RayStage')
         thin = self.solid(col, w=3200, h=2, name='RayThin'); thick = self.solid(col, w=3200, h=4, name='RayThick')
@@ -296,7 +300,15 @@ class Shot:
         m.SetInput('Angle', -28)
         key_xy(m, 'Center', [(f0 - 1, (-1.0, .5)), (f0 + fr(6), (.5, .5)), (f0 + fr(12), (2.0, .5))])
 
+    def grain(self, amount=.07):
+        """Fine moving grain over the frame, as the engine's render adds: animated noise in Overlay, cheap at any size."""
+        n = self.c.AddTool('FastNoise', PLACE, PLACE)
+        n.SetInput('UseFrameFormatSettings', 0); n.SetInput('Width', C['W']); n.SetInput('Height', C['H'])
+        n.SetInput('Detail', 1); n.SetInput('Contrast', 1.6); n.SetInput('Scale', 260); n.SetInput('SeetheRate', 8)
+        m = self.merge(n, blend=amount, name='Grain'); m.SetInput('ApplyMode', 'Overlay')
+
     def finish(self):
+        if C.get('GRAIN', True) and not getattr(self, 'no_grain', False): self.grain()
         self.c.FindToolByID('MediaOut').ConnectInput('Input', self.top)
 
 def tumble(text_tool, f0, stagger=1.5, dur=15, rot=80.0, dy=-.15):
@@ -352,7 +364,7 @@ def slam(s, word, size=None, col=None, whip_in=None, whip_out=None, d=1, fx='hit
     sz = fit(word, wanted(word, size))
     s.ghosts(word, sz, pal(col) if col else None, alpha=.2)
     s.word(word, sz, col=pal(col) if col else None, s0=1.15 if tumble_in else 1.9, settle=9)
-    if tumble_in: tumble(s.last_text, 0)
+    if tumble_in: tumble(s.last_text, 0, stagger=1.1, dur=12, rot=30, dy=-.083)   # the engine's slam: .018 s apart, .2 s each, 30 degrees, 90 px
     if scramble_in: scramble(s.last_text, 0, fr(14))
     s.camera(zoom=.92, push=.1, d=d, hits=[(0, 18)], whip_in=whip_in, whip_out=whip_out, exit=exit)
     _fx(s, fx, 0, big)
@@ -363,7 +375,7 @@ def punch(s, word, f0=0, col=None, whip_in=None, whip_out=None, charge=False, fl
     sz = fit(word, wanted(word))
     s.word(word, sz, f0=f0, s0=.15, settle=11, col=pal(col) if col else None, echo=True)
     s.camera(zoom=.92, push=.08, hits=[(f0, 24)], whip_in=whip_in, whip_out=whip_out, exit=exit)
-    if charge: s.rays(0, a=.5, n=f0 / C['FPS'] * 60 + 30)
+    if charge and not C.get('ENGINE_FX'): s.rays(0, a=.5, n=f0 / C['FPS'] * 60 + 30)   # with the engine's effects, its own charge-up draws instead
     else: s.rays(f0)
     s.flash(f0, a=.6); s.ring(f0); s.rgb_split(f0)
     if flash_at is not None: s.flash_out(flash_at)
@@ -376,7 +388,7 @@ def stack(s, kicker, word, px=1620, y=.47, whip_in=None, whip_out=None, d=1, col
     actual = em(word) * e
     c = pal(col) if col else None
     s.word(kicker, ks, y=ky, s0=1.0 if tumble_in else 1.25, settle=8, drift=.02, col=c, name='Kicker')
-    if tumble_in: tumble(s.last_text, 0, stagger=1.6, dur=14)
+    if tumble_in: tumble(s.last_text, 0, stagger=1.5, dur=16, rot=80, dy=-.15)   # the engine's stack kicker
     s.word(word, sz, f0=half, y=y, s0=1.7, settle=9, drift=.04, col=c)
     if count: counter(s.last_text, half, half + beat(1.6), word)
     elif scramble_in: scramble(s.last_text, half, half + fr(14))
@@ -499,7 +511,20 @@ def strike(s, word, ui=None, no='NO', whip_in=None, whip_out=None, tv_off=False)
     s.word(word, sz, f0=b15, x=wx, y=y, s0=1.5, settle=8, drift=.03, outline=1, name='WordOutline')
     s.word(word, sz, f0=b15, x=wx, y=y, s0=1.5, settle=8, drift=.03)
     key(s.top, 'Blend', [(b2 - 1, 0.0), (b2, 1.0)])
-    s.camera(zoom=.95, push=.06, pan=26, whip_in=whip_in, whip_out=whip_out, hits=[(b1, 10), (b2, 14)], blur='whips', exit=(s.dur - fr(10), .02) if tv_off else None)
+    if tv_off:
+        # the engine's switch-off over the last .7 beats: the picture squashes to a line, then to a point, and a white dot holds
+        tv0, tv1 = s.dur - beat(.7), s.dur - beat(.4)
+        tv = s.xf(s.top, name='TVOff'); tv.SetInput('UseSizeAndAspect', 0); tv.SetInput('Pivot', {1: .5, 2: 1 - 629 / 1080.0, 3: 0}); tv.SetInput('Center', {1: .5, 2: 1 - 629 / 1080.0, 3: 0})
+        key(tv, 'YSize', [(tv0, 1.0)] + bake(tv0, tv1, 1.0, .006, lambda u: u ** 3, 1))
+        key(tv, 'XSize', [(tv1, 1.0)] + bake(tv1, s.dur, 1.0, .002, in_expo, 1))
+        s.top = tv
+    s.camera(zoom=.95, push=.06, pan=26, whip_in=whip_in, whip_out=whip_out, hits=[(b1, 10), (b2, 14)], blur='whips')
+    if tv_off:
+        dot = s.c.AddTool('Merge', PLACE, PLACE)
+        sp = s.solid((255, 255, 255), name='TVDot'); e = s.c.AddTool('EllipseMask', PLACE, PLACE)
+        e.SetInput('Center', {1: .5, 2: 1 - 629 / 1080.0, 3: 0}); e.SetInput('Width', 30 / 1920.0); e.SetInput('Height', 30 / 1920.0); e.SetInput('SoftEdge', .01)
+        sp.ConnectInput('EffectMask', e)
+        m = s.merge(sp, name='TVDotAdd'); key(m, 'Blend', [(tv1 - 1, 0.0), (tv1 + fr(3), 1.0)])
     if (ui or {}).get('type') == 'timeline': s.slash(b2)
 
 # ---- Stretch ----
@@ -559,50 +584,129 @@ def _scene3d(s, parts, cam):
     r.SetInput('MotionBlur', 1); r.SetInput('Quality', 5); r.SetInput('ShutterAngle', 200)
     s.merge(r, name='Render3D')
 
-def fly(s, words, whip_in=None, whip_out=None):
-    """Extruded words in depth: the camera holds on each, rushes through it to the next and lands on the last."""
-    gap, d, n = 12.0, s.dur, len(words)
-    span = d * (n - .35) / float(n)
-    per = span / max(1.0, n - 1.0)
-    parts = []
+def fly(s, words, whip_in=None, whip_out=None, assets=None):
+    """The engine's Fly on its own camera (11 nominal beats, scaled to the shot): extruded words spaced through a tunnel,
+    each in front of a chamfered portal frame, with dust in depth. The camera rolls and rushes through them, lands on the
+    last word on beat 8 and swings round it, then pushes in and fades. Units: 1 = 1000 engine pixels; the eye sits 1.1 in
+    front of the focal plane with an 82.2 degree horizontal view, the engine's own perspective of 1100 px."""
+    d, n = s.dur, len(words)
+    k = lambda rel: rel * d / 11.0
+    gap = 6100.0 / max(1, n - 1); off = [(0, 0), (160, -30), (-120, 30), (0, 0), (140, 20), (-140, -20)]
+    cz0, cz1 = -700.0, (n - 1) * gap - 140
+    ease = lambda u: .4 * u + .6 * (4 * u ** 3 if u < .5 else 1 - (-2 * u + 2) ** 3 / 2)
+    io = lambda u: 4 * u ** 3 if u < .5 else 1 - (-2 * u + 2) ** 3 / 2
+    def view(f):
+        u = max(0.0, min(1.0, f / k(8))); e = ease(u)
+        orb = io(max(0.0, min(1.0, (f - k(8)) / (k(10.8) - k(8)))))
+        land = (f - k(8)) / C['FPS']; zp = -140 * max(0.0, min(1.0, land / .2))
+        return dict(cz=lerp(cz0, cz1, e), roll=lerp(2, -5, e) + 8 * math.sin(u * math.pi * 2.2) * (1 - orb), yaw=lerp(7, -3, e) + 50 * orb, zp=zp)
+    def first_frame(pred):
+        for f in range(0, d + 1):
+            if pred(view(f)): return f
+        return d + 1
+    world = s.c.AddTool('Merge3D', PLACE, PLACE); world.SetAttrs({'TOOLS_Name': 'FlyWorld'}); slot = [1]
+    def add(tool):
+        world.ConnectInput('SceneInput%d' % slot[0], tool); slot[0] += 1
+    portal = (assets or {}).get('portal'); dust = (assets or {}).get('dust')
+    def plane(path, x, y, z, w, rot=0.0, name='Plane'):
+        img = s.loader(path, name=name + 'Image')
+        p = s.c.AddTool('ImagePlane3D', PLACE, PLACE); p.ConnectInput('MaterialInput', img); p.SetAttrs({'TOOLS_Name': name})
+        p.SetInput('Transform3DOp.Translate.X', x); p.SetInput('Transform3DOp.Translate.Y', y); p.SetInput('Transform3DOp.Translate.Z', z)
+        p.SetInput('Transform3DOp.Rotate.Z', rot); p.SetInput('Transform3DOp.ScaleLock', 1); p.SetInput('Transform3DOp.Scale.X', w)
+        add(p); return p
+    if dust:
+        for j in range(6):
+            dz = -((n - 1) * gap + 1300) + j * ((n - 1) * gap + 2100) / 5.0
+            pz = plane(dust, 0, 0, dz / 1000.0, 3.0 + j * .15, j * 37, name='Dust')
+            gone = first_frame(lambda v: dz + v['cz'] > 1000)
+            if gone <= d: key(pz, 'Transform3DOp.Scale.X', [(gone - 1, 3.0 + j * .15), (gone, .0001)])
     for i, (w, c) in enumerate(words):
-        size = fit(w, 1500) * 1.3
-        t = _t3(s, w, size, pal(c), z=-gap * i, name='Word3D')
-        if i: key(t, 'Size', [(per * (i - 1) + per * .3 - 1, .0001), (per * (i - 1) + per * .3, size)])
-        parts.append(t)
+        col = pal(c); dx, dy = (0, 0) if i == n - 1 else off[i % len(off)]; z = -i * gap
+        em_px = min(260.0, 1500.0 / em(w)); size = em_px / 1000.0 / .667
+        t = _t3(s, w, size, col, z=z / 1000.0, depth=.09, name='Word3D')
+        t.SetInput('Transform3DOp.Translate.X', dx / 1000.0); t.SetInput('Transform3DOp.Translate.Y', -dy / 1000.0 - .36 * em_px / 1000.0)
+        gone = first_frame(lambda v: z + v['cz'] >= 1080)
+        if gone <= d: key(t, 'Size', [(gone - 1, size), (gone, .0001)])
+        add(t)
+        if portal:
+            pp = plane(portal, dx * .6 / 1000.0, -dy * .6 / 1000.0, (z - 260) / 1000.0, 1.56, -[-3, 4, -5, 2, -4, 3][i % 6], name='Portal')
+            gone = first_frame(lambda v: z - 260 + v['cz'] >= 1080)
+            if gone <= d: key(pp, 'Transform3DOp.Scale.X', [(gone - 1, 1.56), (gone, .0001)])
+    # the engine's rig: world.translateZ(cz - zp) rotated about the point it brings to the focal plane, then translateZ(zp), then the roll
+    fr_ = list(range(0, d + 1, 2)) + ([d] if d % 2 else [])
+    V = {f: view(f) for f in fr_}
+    key(world, 'Transform3DOp.Translate.Z', [(f, (V[f]['cz'] - V[f]['zp']) / 1000.0) for f in fr_])
+    key(world, 'Transform3DOp.Pivot.Z', [(f, -(V[f]['cz'] - V[f]['zp']) / 1000.0) for f in fr_])
+    key(world, 'Transform3DOp.Rotate.Y', [(f, V[f]['yaw']) for f in fr_])   # same sign as CSS rotateY: checked against the original's final swing
+    rig = s.c.AddTool('Merge3D', PLACE, PLACE); rig.SetAttrs({'TOOLS_Name': 'FlyRig'})
+    rig.ConnectInput('SceneInput1', world)
+    key(rig, 'Transform3DOp.Translate.Z', [(f, V[f]['zp'] / 1000.0) for f in fr_]); key(rig, 'Transform3DOp.Rotate.Z', [(f, -V[f]['roll']) for f in fr_])
     cam = s.c.AddTool('Camera3D', PLACE, PLACE); cam.SetAttrs({'TOOLS_Name': 'FlyCam'})
-    zs, xs, rz = [], [], []
-    for f in range(0, d + 1, 2):
-        pos = min(f / span, 1.0) * (n - 1)
-        i = min(int(pos), max(0, n - 2)); frac = pos - i
-        eased = frac ** 3 * (frac * (6 * frac - 15) + 10)   # hold near each word, rush between them
-        zs.append((f, 2.4 - gap * (i + eased) - .1 * f / C['FPS']))
-        xs.append((f, .12 * math.sin(f * .045 * 60 / C['FPS'])))
-        rz.append((f, 4 * math.sin(f * .03 * 60 / C['FPS'])))
-    key(cam, 'Transform3DOp.Translate.Z', zs); key(cam, 'Transform3DOp.Translate.X', xs); key(cam, 'Transform3DOp.Rotate.Z', rz)
-    _scene3d(s, parts, cam)
-    s.camera(zoom=1.0, push=.0, pan=0, blur=False, whip_in=whip_in, whip_out=whip_out)
+    cam.SetInput('AovType', 1); cam.SetInput('AoV', 82.2); cam.SetInput('Transform3DOp.Translate.Z', 1.1)
+    top = s.c.AddTool('Merge3D', PLACE, PLACE); top.ConnectInput('SceneInput1', rig); top.ConnectInput('SceneInput2', cam)
+    amb = s.c.AddTool('LightAmbient', PLACE, PLACE); amb.SetInput('Intensity', .55)
+    sun = s.c.AddTool('LightDirectional', PLACE, PLACE); sun.SetInput('Intensity', .8)
+    sun.SetInput('Transform3DOp.Rotate.X', -35); sun.SetInput('Transform3DOp.Rotate.Y', 25)
+    top.ConnectInput('SceneInput3', amb); top.ConnectInput('SceneInput4', sun)
+    # the engine fades words further back than 900 px past the focal plane: fog in the ground colour does the same here
+    fog = s.c.AddTool('Fog3D', PLACE, PLACE); fog.ConnectInput('SceneInput', top)
+    g = rgb(s.ground); fog.SetInput('FogRed', g[0]); fog.SetInput('FogGreen', g[1]); fog.SetInput('FogBlue', g[2])
+    fog.SetInput('NearFogDist', 2.0); fog.SetInput('FarFogDistance', 3.4)
+    r = s.c.AddTool('Renderer3D', PLACE, PLACE); r.ConnectInput('SceneInput', fog); r.SetInput('LightingEnabled', 1)
+    r.SetInput('UseFrameFormatSettings', 0); r.SetInput('Width', C['W']); r.SetInput('Height', C['H'])
+    r.SetInput('MotionBlur', 1); r.SetInput('Quality', 5); r.SetInput('ShutterAngle', 200)
+    s.merge(r, name='Render3D')
+    s.camera(zoom=1.0, push=.0, pan=0, blur=False, whip_in=whip_in, whip_out=whip_out, exit=(int(k(10.5)), 1.5))
+    og = s.c.FindTool('OverGround')
+    if og: key(og, 'Blend', [(int(k(10.7)), 1.0)] + bake(int(k(10.7)), d, 1.0, 0.0, in_expo, 2))
     s.glow(.35, 12)
 
 def hero(s, kicker, title, sub=None, whip_in=None, whip_out=None):
-    """The kicker lands, an extruded 3D title flies out of depth and turns, and a line types under it."""
-    d, land = s.dur, beat(1.0)
+    """The engine's Hero on its own timing (8 nominal beats, scaled to the shot): the camera lands from a 1.7x zoom while the
+    kicker's letters tumble in from the right; at beat 2 the extruded title flies out of depth, swings round and keeps
+    orbiting; it flips over at beat 4, a line types under it at beat 5, and outlined ghosts of it fan back at beat 6.
+    The comet that spirals in before beat 2, and the slash, rays and sparks on the landing, come from fx_layer."""
+    d = s.dur
+    k = lambda rel: int(round(rel * d / 8.0))
+    land, flip, typ, gho = k(2), k(4), k(5), k(6)
     ep = min(1385.0 / em(title), 300.0)        # the title's on-screen em in pixels; .738 is measured for this camera
-    t = _t3(s, title, ep / (C['PX'] * .738), s.ink(), name='Title3D')
-    key(t, 'Transform3DOp.Rotate.Y', [(land - 1, -55)] + bake(land, land + fr(22), -55, -12) + [(d, 14)])
-    key(t, 'Transform3DOp.Translate.Z', [(0, -60), (land - 1, -60)] + bake(land, land + fr(14), -60, 0) + [(d, .22)])
+    size = ep / (C['PX'] * .738)
+    if title:
+        # outlined ghosts of the title, behind it, that fan back on beat 6
+        for i in (3, 2, 1):
+            g = s.text(title, size * .74, pal('accent'), outline=1, name='TitleGhost')
+            m = s.xf(g, name='GhostBack')
+            key(m, 'Size', [(gho - 1, 1.0)] + bake(gho, gho + fr(36), 1.0, 1 - .11 * i, out_cubic, 2))
+            mg = s.merge(m, center=(.5, .45), name='GhostPlace')
+            key(mg, 'Blend', [(gho - 1, 0.0)] + bake(gho, gho + fr(36), 0.0, .16 * (4 - i), out_cubic, 3))
+    t = _t3(s, title, size, s.ink(), name='Title3D')
+    t.SetInput('Transform3DOp.Translate.Y', -.06)
+    key(t, 'Size', [(land - 1, .0001), (land, size)])
+    swing = bake(land, land + fr(27), -140, -18, out_expo, 1)
+    orb = lambda f: (1 - math.cos(math.pi * max(0.0, min(1.0, (f - land) / float(max(1, d - land)))))) / 2
+    key(t, 'Transform3DOp.Rotate.Y', [(land - 1, -140)] + [(f, v + 48 * orb(f)) for f, v in swing] + [(f, -18 + 48 * orb(f)) for f in range(land + fr(30), d + 1, fr(8))])
+    fl = lambda f: 360 * (lambda u: 4 * u ** 3 if u < .5 else 1 - (-2 * u + 2) ** 3 / 2)(max(0.0, min(1.0, (f - flip) / float(fr(18)))))
+    key(t, 'Transform3DOp.Rotate.X', [(land - 1, 18)] + [(f, lerp(18, 9, out_expo(min(1.0, (f - land) / float(fr(27))))) - 6 * orb(f) + fl(f)) for f in range(land, d + 1, 2)])
+    key(t, 'Transform3DOp.Translate.Z', [(land - 1, -60)] + bake(land, land + fr(27), -60, 0, out_expo, 1) + [(d, .25)])
     cam = s.c.AddTool('Camera3D', PLACE, PLACE); cam.SetInput('Transform3DOp.Translate.Z', 2.4); cam.SetAttrs({'TOOLS_Name': 'HeroCam'})
     _scene3d(s, [t], cam)
     if kicker:
         kem = min(fit(kicker, 980) * C['PX'], ep * .5)
-        s.word(kicker, kem / C['PX'], y=min(.88, .5 + (ep + kem * .55) / 1080.0), s0=1.3, settle=9, drift=.03, name='Kicker')
+        m = s.word(kicker, kem / C['PX'], y=min(.88, .45 + (ep + kem * .55) / 1080.0), s0=1.0, settle=1, drift=.0, name='Kicker')
+        tumble(s.last_text, 0, stagger=1.5, dur=18, rot=60, dy=-.11)   # the engine's hero kicker
+        key_xy(m, 'Center', [(f, (.5 + .36 * (1 - out_expo(f / float(fr(21)))) - 90 * f / C['FPS'] / 1920, .5)) for f in range(0, fr(22))] + [(d, (.5 - 90 * d / C['FPS'] / 1920, .5))])
     if sub:
-        t2 = s.text(sub, .036, pal('accent'), ui=True, name='Typed')
-        w0 = beat(2.4)
-        key(t2, 'End', [(w0, 0.0), (min(d - 1, w0 + beat(2.2)), 1.0)])
-        s.merge(t2, center=(.5, .24), name='TypedPlace')
-    s.camera(zoom=.9, push=.09, pan=30, whip_in=whip_in, whip_out=whip_out, hits=[(land, 22)], blur=False)
-    s.rays(land, a=.45); s.flash(land, a=.55); s.ring(land, n=24)
+        line = '> ' + sub
+        t2 = s.text(line, .032, pal('accent'), ui=True, name='Typed')
+        key(t2, 'End', [(typ - 1, 0.0), (typ, 2.0 / len(line))] + bake(typ, typ + fr(24), 2.0 / len(line), 1.0, lambda u: u, 2))
+        m2 = s.merge(t2, center=(.5, 1 - 885 / 1080.0), name='TypedPlace')
+        key(m2, 'Blend', [(typ - fr(12), 0.0), (typ, 1.0)])
+    s.camera(zoom=1.0, push=.08 * C['FPS'] / max(1, d) * 1.0, pan=30, whip_in=whip_in, whip_out=whip_out, hits=[(land, 22)], blur=False)
+    cm = s.c.FindTool('Camera')
+    if cm:
+        # the landing: from 1.7x into the frame over the first 0.6 s, with a roll that settles
+        key(cm, 'Size', [(f, lerp(1.7, 1.0, out_expo(min(1.0, f / float(fr(36))))) * (1 + .08 * f / float(d)) * (1 + .05 * max(0.0, 1 - abs(f - land) / float(fr(13))) ** 2)) for f in range(0, d + 1, 2)])
+        key(cm, 'Angle', [(f, lerp(-1, 1, f / float(d)) + 4 * (1 - out_expo(min(1.0, f / float(fr(36)))))) for f in range(0, d + 1, 3)])
 
 # ---- Picture ----
 def picture(s, src, words=(), cutIns=(), tint=.25, focus=(.5, .5), x=None, y=None, reveal='slash', whip_in=None, whip_out=None):
